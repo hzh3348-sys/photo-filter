@@ -32,7 +32,6 @@ jobs:
             --exclude-module PyQt5 \
             --exclude-module PyQt6 \
             --exclude-module PySide2 \
-            --exclude-module matplotlib \
             --exclude-module mkl \
             photo_filter_gui.py
           cd dist/照片筛选工具
@@ -66,7 +65,6 @@ jobs:
             --exclude-module PyQt5 \
             --exclude-module PyQt6 \
             --exclude-module PySide2 \
-            --exclude-module matplotlib \
             --exclude-module mkl \
             photo_filter_gui.py
           cd dist
