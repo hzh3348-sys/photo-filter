@@ -11,8 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
-# ── 必须在导入 PySide6 之前设置 ──
-if getattr(sys, 'frozen', False):
+# ── Windows 打包后需要手动指定 Qt 插件路径（macOS 无需）──
+if getattr(sys, 'frozen', False) and sys.platform == 'win32':
     _os.environ['QT_PLUGIN_PATH'] = _os.path.join(
         _os.path.dirname(sys.executable), '_internal', 'PySide6', 'plugins')
 
