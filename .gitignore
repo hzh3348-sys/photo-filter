@@ -1,0 +1,28 @@
+# Build outputs
+照片筛选GUI_v2.0_by_HZH/
+照片筛选GUI_v2.0_by_HZH.zip
+照片筛选GUI_by_HZH_portable/
+照片筛选工具_Setup/
+照片筛选工具_v2.0_Setup.zip
+build/
+dist/
+build_pkgs/
+build_pkgs_setup/
+build_setup/
+dist_setup/
+build_gui/
+dist_gui/
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
