@@ -11,21 +11,24 @@ metadata:
 
 - 作者：HZH
 - 仓库：https://github.com/hzh3348-sys/photo-filter
-- 工作区：`F:\Claude工程\照片筛选程序`
 - 版本：v3.0
 
 ## 架构概览
 
 ```
-main.py  →  gui/main_window.py  →  gui/worker.py  →  core/pipeline.py
-                (UI层)              (多线程处理)        (检测编排器)
-                                                        ↓
-                                   core/{exposure, skin_tone, eyes,
-                                         level, blur, clarity}.py
+main.py (入口) → gui/main_window.py (UI) → gui/worker.py (多线程)
+                       ↓                         ↓
+                  gui/theme_manager.py     core/pipeline.py (编排器)
+                  gui/dialogs/                  ↓
+                  gui/widgets/          core/{exposure, skin_tone, eyes,
+                                              level, blur, clarity, duplicate}.py
+
+utils/{constants, config, image_io}.py  ← 被所有层引用
+resources/themes/{light, dark}.qss      ← theme_manager 加载
 ```
 
 三层分离：
-- **core/** — 纯算法层，零 Qt 依赖，可独立测试
+- **core/** — 纯算法层，零 Qt 依赖，可独立测试（29 个 pytest）
 - **gui/** — PySide6 界面层
 - **utils/** — 工具层（配置、常量、图片I/O）
 
@@ -63,12 +66,18 @@ main.py  →  gui/main_window.py  →  gui/worker.py  →  core/pipeline.py
 ## 关键代码位置
 
 - 检测阈值常量：`utils/constants.py`
-- 配置持久化：`utils/config.py` → `AppConfig` 类
-- 人脸检测参数：`core/pipeline.py` → `MediaPipeManager._create_landmarker()`
-- 并行线程数：`utils/constants.py` → `DEFAULT_MAX_WORKERS`
-- 彩蛋：`gui/main_window.py` → `_on_finished()` 魏老师点评
+- 配置持久化：`utils/config.py` → `AppConfig` 单例类
+- 人脸检测参数：`core/pipeline.py` → `MediaPipeManager._create_landmarker()` (min_face_detection_confidence=0.25)
+- 小脸两轮检测：`core/pipeline.py` → `_detect_faces()` (首轮原图，次轮放大到 1200px)
+- 人脸检测开关：`DetectionConfig.enable_face_detection` → 关闭时跳过 MediaPipe
+- 模糊算法：`core/blur.py` → 4×4 网格 + 取前 25% 最清晰区域均值（浅景深不误判）
+- 地平线检测：`core/level.py` → `check_level_horizon()` (只找长水平线，聚类判断)
+- 并行线程数：`utils/constants.py` → `DEFAULT_MAX_WORKERS` (=2)
+- 彩蛋：`gui/main_window.py` → `_on_finished()` → 有人脸时合格率 <30% 或 >80% 弹魏老师点评
 - 主题文件：`resources/themes/light.qss`, `dark.qss`
-- 模型路径：`core/pipeline.py` → `_get_model_path()`
+- 跟随系统主题：`gui/theme_manager.py` → `_detect_system_theme()` (Qt ColorScheme)
+- 模型路径：`core/pipeline.py` → `_get_model_path()` (frozen 模式兼容 PyInstaller)
+- 退出确认：`gui/main_window.py` → `closeEvent()` (分析中关闭弹确认框)
 
 ## 开发流程
 
@@ -97,14 +106,16 @@ git push origin v3.X
 
 ## 打包注意事项
 
-1. 不能排除 `matplotlib`（MediaPipe 内部依赖）
-2. 不能排除 `PIL`（matplotlib 依赖）
-3. 必须加 `--collect-binaries mediapipe`
-4. 必须加 `--collect-submodules mediapipe`
-5. Qt 插件路径：pip 安装的 PySide6 有 `plugins/`
-6. 中文路径：已用 `model_asset_buffer` 内存加载绕过
-7. `--onedir` 模式（非 `--onefile`）
-8. 构建用 PYPI 纯净 numpy（不含 MKL）
+1. **入口**：用 `main.py`（非 `photo_filter_gui.py`），PyInstaller 自动追踪所有导入
+2. **不要**加 `--hidden-import` 给自定义模块（冗余且可能导致 CI 失败），PyInstaller 会追踪 `main.py` 的导入链
+3. **资源文件**：`--add-data "resources/themes;resources/themes"` (Win) 或 `:resources/themes` (Mac)
+4. 不能排除 `matplotlib`（MediaPipe 内部依赖），不能排除 `PIL`
+5. 必须加 `--collect-binaries mediapipe` 和 `--collect-submodules mediapipe`
+6. Qt 插件路径：pip 安装的 PySide6 有 `plugins/`，Anaconda 的没有
+7. 中文路径：已用 `model_asset_buffer` 内存加载绕过 MediaPipe C++ 路径问题
+8. `--onedir` 模式（`--onefile` 有 DLL 加载问题）
+9. 构建用 PYPI 纯净 numpy（不含 MKL），否则体积暴增 250MB+
+10. CI 构建失败常见原因：`--hidden-import` 冗余/错误、资源路径不存在、入口文件不对
 
 ## 添加新检测器
 
