@@ -15,11 +15,15 @@ jobs:
           python-version: "3.11"
       - name: 安装依赖
         run: pip install opencv-python mediapipe PySide6 pyinstaller pillow
-      - name: 构建（与本地 build_v2.py 完全一致）
+      - name: 构建
         shell: cmd
         run: |
           python -c "import PySide6,os;p=os.path.dirname(PySide6.__file__);print('PySide6:',p);import glob;plugs=glob.glob(os.path.join(p,'plugins','platforms','*'));print('plugins:',plugs[:3])"
           python build_v2.py
+      - name: 验证产物
+        shell: cmd
+        run: |
+          dir 照片筛选GUI_v3.0_by_HZH\ /s | findstr /i "exe themes"
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-便携版
@@ -40,9 +44,13 @@ jobs:
           pyinstaller --onedir --windowed \
             --name "照片筛选工具" \
             --add-data "face_landmarker.task:." \
+            --add-data "resources/themes:resources/themes" \
             --hidden-import cv2 \
             --hidden-import numpy \
             --hidden-import PySide6 \
+            --hidden-import core \
+            --hidden-import gui \
+            --hidden-import utils \
             --collect-submodules mediapipe \
             --collect-binaries mediapipe \
             --exclude-module scipy \
@@ -50,7 +58,7 @@ jobs:
             --exclude-module PyQt6 \
             --exclude-module PySide2 \
             --exclude-module mkl \
-            photo_filter_gui.py
+            main.py
           cd dist
           zip -r ../照片筛选工具_macOS.zip "照片筛选工具.app"
       - uses: actions/upload-artifact@v4
