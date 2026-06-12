@@ -15,31 +15,15 @@ jobs:
           python-version: "3.11"
       - name: 安装依赖
         run: pip install opencv-python mediapipe PySide6 pyinstaller pillow
-      - name: 构建
-        shell: bash
+      - name: 构建（与本地 build_v2.py 完全一致）
+        shell: cmd
         run: |
-          pyinstaller --onedir --windowed \
-            --name "照片筛选工具" \
-            --add-data "face_landmarker.task;." \
-            --add-data "$(python -c 'import PySide6,os;print(os.path.dirname(PySide6.__file__))')/plugins/platforms;PySide6/plugins/platforms" \
-            --add-data "$(python -c 'import PySide6,os;print(os.path.dirname(PySide6.__file__))')/plugins/styles;PySide6/plugins/styles" \
-            --hidden-import cv2 \
-            --hidden-import numpy \
-            --hidden-import PySide6 \
-            --collect-submodules mediapipe \
-            --collect-binaries mediapipe \
-            --exclude-module scipy \
-            --exclude-module PyQt5 \
-            --exclude-module PyQt6 \
-            --exclude-module PySide2 \
-            --exclude-module mkl \
-            photo_filter_gui.py
-          cd dist/照片筛选工具
-          7z a -tzip ../../照片筛选工具_Windows.zip .
+          python -c "import PySide6,os;p=os.path.dirname(PySide6.__file__);print('PySide6:',p);import glob;plugs=glob.glob(os.path.join(p,'plugins','platforms','*'));print('plugins:',plugs[:3])"
+          python build_v2.py
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-便携版
-          path: 照片筛选工具_Windows.zip
+          path: 照片筛选GUI_v3.0_by_HZH.zip
 
   # ── macOS ──
   build-macos:
@@ -88,6 +72,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            Windows-便携版/照片筛选工具_Windows.zip
+            Windows-便携版/照片筛选GUI_v3.0_by_HZH.zip
             macOS-app/照片筛选工具_macOS.zip
           fail_on_unmatched_files: false

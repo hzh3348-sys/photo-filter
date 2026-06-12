@@ -1,0 +1,648 @@
+"""
+主窗口 — 照片自动筛选工具 v3.0 GUI。
+从 photo_filter_gui.py 重构拆分。
+"""
+
+from pathlib import Path
+
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QLineEdit, QSlider, QProgressBar,
+    QTableWidget, QTableWidgetItem, QFileDialog, QGroupBox,
+    QCheckBox, QComboBox, QHeaderView, QMessageBox, QSplashScreen,
+)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen, QBrush
+
+from core.models import DetectionConfig
+from gui.worker import ProcessWorker
+from gui.theme_manager import ThemeManager
+from utils.constants import (
+    DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
+    EAR_MIN, EAR_MAX, SUPPORTED_EXTENSIONS,
+    OVER_SLIDER_RANGE, UNDER_SLIDER_RANGE, EAR_SLIDER_RANGE,
+)
+from utils.config import AppConfig
+
+
+# ── 闪屏 ──────────────────────────────────────────────────
+
+def create_splash() -> QSplashScreen:
+    """创建启动闪屏。"""
+    pixmap = QPixmap(400, 200)
+    pixmap.fill(QColor("#fafafa"))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(QColor("#ddd"), 1))
+    painter.setBrush(QBrush(QColor("#fafafa")))
+    painter.drawRoundedRect(2, 2, 396, 196, 10, 10)
+    painter.setPen(QColor("#333"))
+    font = painter.font()
+    font.setPointSize(16)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.drawText(0, 60, 400, 30, Qt.AlignCenter, "照片自动筛选工具 by HZH")
+    font.setPointSize(10)
+    font.setBold(False)
+    painter.setFont(font)
+    painter.setPen(QColor("#888"))
+    painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
+    font.setPointSize(8)
+    painter.setFont(font)
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v3.0")
+    painter.end()
+    return QSplashScreen(pixmap)
+
+
+# ── 主窗口 ────────────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    """照片筛选工具主窗口。"""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("照片自动筛选工具 by HZH  v3.0")
+        self.setMinimumSize(920, 720)
+        self.resize(1020, 780)
+        self.results_data = []
+        self.worker = None
+        self._app_config = AppConfig()
+
+        self._setup_ui()
+        self._apply_style()
+        self._restore_settings()
+
+    def _setup_ui(self):
+        """构建界面布局。"""
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(12, 10, 12, 10)
+
+        # 标题行 + 主题切换按钮
+        title_row = QHBoxLayout()
+        title = QLabel("照片自动筛选工具 by HZH  v3.0")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        # 设置按钮（右上角）
+        settings_btn = QPushButton("⚙ 设置")
+        settings_btn.setMinimumHeight(30)
+        settings_btn.clicked.connect(self._open_settings)
+        title_row.addWidget(settings_btn)
+        main_layout.addLayout(title_row)
+
+        # ── 文件夹 ──
+        folder_group = QGroupBox("文件夹设置")
+        folder_layout = QVBoxLayout(folder_group)
+
+        in_row = QHBoxLayout()
+        in_row.addWidget(QLabel("照片文件夹:"))
+        self.input_edit = QLineEdit()
+        self.input_edit.setPlaceholderText("选择照片文件夹...")
+        in_row.addWidget(self.input_edit, 1)
+        btn_in = QPushButton("浏览...")
+        btn_in.clicked.connect(self._browse_input)
+        in_row.addWidget(btn_in)
+        folder_layout.addLayout(in_row)
+
+        out_row = QHBoxLayout()
+        out_row.addWidget(QLabel("输出文件夹:"))
+        self.output_edit = QLineEdit()
+        self.output_edit.setPlaceholderText("留空则仅分析不输出（可选）")
+        out_row.addWidget(self.output_edit, 1)
+        btn_out = QPushButton("浏览...")
+        btn_out.clicked.connect(self._browse_output)
+        out_row.addWidget(btn_out)
+        folder_layout.addLayout(out_row)
+
+        self.copy_check = QCheckBox("复制照片（否则移动）")
+        self.copy_check.setChecked(True)
+        folder_layout.addWidget(self.copy_check)
+
+        main_layout.addWidget(folder_group)
+
+        # ── 检测选项（合并：开关 + 阈值）──
+        detect_group = QGroupBox("检测选项")
+        detect_layout = QVBoxLayout(detect_group)
+        detect_layout.setSpacing(4)
+        detect_layout.setContentsMargins(10, 14, 10, 8)
+
+        # ── 人脸检测开关 ──
+        face_row = QHBoxLayout()
+        self.face_check = QCheckBox("启用人脸检测（睁眼 + 肤色）")
+        self.face_check.setChecked(True)
+        self.face_check.setToolTip("关闭后仅检测曝光、构图和模糊，大幅提升速度")
+        self.face_check.toggled.connect(self._on_face_toggled)
+        face_row.addWidget(self.face_check)
+        face_row.addStretch()
+        detect_layout.addLayout(face_row)
+
+        # 睁眼灵敏度滑块
+        config = self._app_config
+        self.ear_slider = self._make_slider(
+            detect_layout, "睁眼灵敏度", config.ear_threshold,
+            EAR_SLIDER_RANGE[0], EAR_SLIDER_RANGE[1], EAR_SLIDER_RANGE[2],
+            "越小越宽容")
+
+        # 分隔线
+        sep1 = QLabel()
+        sep1.setFixedHeight(1)
+        sep1.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
+        detect_layout.addWidget(sep1)
+
+        # ── 曝光阈值 ──
+        self.over_slider = self._make_slider(
+            detect_layout, "过曝容忍度", config.over_threshold,
+            OVER_SLIDER_RANGE[0], OVER_SLIDER_RANGE[1], OVER_SLIDER_RANGE[2],
+            "越大越宽容")
+        self.under_slider = self._make_slider(
+            detect_layout, "欠曝容忍度", config.under_threshold,
+            UNDER_SLIDER_RANGE[0], UNDER_SLIDER_RANGE[1], UNDER_SLIDER_RANGE[2],
+            "越大越宽容")
+
+        # 分隔线
+        sep2 = QLabel()
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
+        detect_layout.addWidget(sep2)
+
+        # ── 构图检测 ──
+        self.level_check = QCheckBox("检测构图水平（横平竖直）")
+        self.level_check.setToolTip("检测照片是否倾斜，支持地平线和通用两种方法")
+        self.level_check.toggled.connect(self._on_level_toggled)
+        detect_layout.addWidget(self.level_check)
+
+        level_detail_row = QHBoxLayout()
+        level_detail_row.setContentsMargins(24, 0, 0, 0)
+        level_detail_row.addWidget(QLabel("方法:"))
+        self.level_method_combo = QComboBox()
+        self.level_method_combo.addItem("地平线检测（推荐）", "horizon")
+        self.level_method_combo.addItem("通用检测", "general")
+        self.level_method_combo.setToolTip(
+            "地平线检测：只找长水平线判断倾斜，复杂场景不误判\n"
+            "通用检测：分析所有线条角度一致性（适合建筑/室内）")
+        level_detail_row.addWidget(self.level_method_combo)
+        level_detail_row.addSpacing(16)
+        level_detail_row.addWidget(QLabel("严格度:"))
+        self.level_angle_slider = QSlider(Qt.Horizontal)
+        self.level_angle_slider.setMinimum(4)
+        self.level_angle_slider.setMaximum(24)
+        self.level_angle_slider.setValue(10)
+        self.level_angle_slider.setTickPosition(QSlider.TicksBelow)
+        self.level_angle_slider.setTickInterval(4)
+        self.level_angle_slider.setFixedWidth(160)
+        level_detail_row.addWidget(self.level_angle_slider)
+        self.level_angle_label = QLabel("5.0°")
+        self.level_angle_label.setFixedWidth(40)
+        self.level_angle_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        level_detail_row.addWidget(self.level_angle_label)
+        level_detail_row.addWidget(QLabel("越小越严格"))
+        level_detail_row.addStretch()
+        detect_layout.addLayout(level_detail_row)
+
+        self.level_method_combo.setEnabled(False)
+        self.level_angle_slider.setEnabled(False)
+        self.level_angle_slider.valueChanged.connect(self._on_level_angle_changed)
+        self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
+
+        # 分隔线
+        sep3 = QLabel()
+        sep3.setFixedHeight(1)
+        sep3.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
+        detect_layout.addWidget(sep3)
+
+        # ── 其他检测 ──
+        self.blur_check = QCheckBox("检测照片模糊")
+        self.blur_check.setToolTip("智能检测模糊照片（取最清晰区域判断，浅景深不误判）")
+        self.blur_check.toggled.connect(self._on_blur_toggled)
+        detect_layout.addWidget(self.blur_check)
+
+        # 模糊宽容度滑块（缩进显示）
+        blur_detail_row = QHBoxLayout()
+        blur_detail_row.setContentsMargins(24, 0, 0, 0)
+        blur_detail_row.addWidget(QLabel("宽容度:"))
+        self.blur_slider = QSlider(Qt.Horizontal)
+        self.blur_slider.setMinimum(2)    # 10 / 5
+        self.blur_slider.setMaximum(40)   # 200 / 5
+        self.blur_slider.setValue(8)      # 默认 40
+        self.blur_slider.setTickPosition(QSlider.TicksBelow)
+        self.blur_slider.setTickInterval(4)
+        self.blur_slider.setFixedWidth(160)
+        blur_detail_row.addWidget(self.blur_slider)
+        self.blur_value_label = QLabel("40")
+        self.blur_value_label.setFixedWidth(36)
+        self.blur_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        blur_detail_row.addWidget(self.blur_value_label)
+        blur_detail_row.addWidget(QLabel("越大越宽容"))
+        blur_detail_row.addStretch()
+        detect_layout.addLayout(blur_detail_row)
+
+        self.blur_slider.setEnabled(False)
+        self.blur_slider.valueChanged.connect(
+            lambda v: self.blur_value_label.setText(str(v * 5)))
+
+        self.duplicate_check = QCheckBox("检测重复照片")
+        self.duplicate_check.setToolTip("使用 dHash 感知哈希识别相似/重复照片")
+        detect_layout.addWidget(self.duplicate_check)
+
+        main_layout.addWidget(detect_group)
+
+        # ── 按钮 ──
+        btn_row = QHBoxLayout()
+        self.start_btn = QPushButton("开始分析")
+        self.start_btn.setMinimumHeight(36)
+        self.start_btn.clicked.connect(self._start_analysis)
+        btn_row.addWidget(self.start_btn)
+
+        self.stop_btn = QPushButton("停止")
+        self.stop_btn.setMinimumHeight(36)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._stop_analysis)
+        btn_row.addWidget(self.stop_btn)
+
+        btn_row.addStretch()
+        self.status_label = QLabel("就绪")
+        self.status_label.setStyleSheet("color: #888;")
+        btn_row.addWidget(self.status_label)
+        main_layout.addLayout(btn_row)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        # ── 表格 ──
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["状态", "文件名", "结果", "详情"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.table.setColumnWidth(0, 50)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        # 双击打开原图
+        self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
+        main_layout.addWidget(self.table, 1)
+
+        # ── 汇总 ──
+        self.summary_label = QLabel("")
+        self.summary_label.setFont(QFont("", 10, QFont.Bold))
+        main_layout.addWidget(self.summary_label)
+
+        # 水印
+        watermark = QLabel("by HZH  v3.0")
+        watermark.setAlignment(Qt.AlignRight | Qt.AlignBottom)
+        watermark.setStyleSheet("color: rgba(180,180,180,80); font-size: 11px;")
+        main_layout.addWidget(watermark)
+
+    def _make_slider(self, parent_layout, name, default_val, min_v, max_v, step, hint):
+        """创建带标签的滑块控件。"""
+        row = QHBoxLayout()
+        label = QLabel(f"{name}:")
+        label.setMinimumWidth(80)
+        row.addWidget(label)
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(int(min_v / step))
+        slider.setMaximum(int(max_v / step))
+        slider.setValue(int(default_val / step))
+        slider.setTickPosition(QSlider.TicksBelow)
+        slider.setTickInterval(int((max_v - min_v) / step / 10))
+        row.addWidget(slider, 1)
+
+        value_label = QLabel(f"{default_val:.2f}")
+        value_label.setMinimumWidth(40)
+        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row.addWidget(value_label)
+
+        hint_label = QLabel(hint)
+        hint_label.setStyleSheet("color: #999; font-size: 11px;")
+        hint_label.setMinimumWidth(160)
+        row.addWidget(hint_label)
+
+        slider.valueChanged.connect(
+            lambda v, vl=value_label, s=step: vl.setText(f"{v * s:.2f}"))
+        parent_layout.addLayout(row)
+        return slider
+
+    def _apply_style(self):
+        """应用 QSS 样式表（通过 ThemeManager）。"""
+        self.start_btn.setObjectName("startBtn")
+        theme_mgr = ThemeManager()
+        theme_mgr.restore()  # 启动时加载保存的主题（auto则跟随系统）
+
+    # ── 设置持久化 ──────────────────────────────────────────
+
+    def _restore_settings(self):
+        """恢复上次保存的设置。"""
+        config = self._app_config
+        saved_input = config.input_dir
+        if saved_input:
+            self.input_edit.setText(saved_input)
+        saved_output = config.output_dir
+        if saved_output:
+            self.output_edit.setText(saved_output)
+
+        # 恢复阈值滑块
+        self.ear_slider.setValue(int(config.ear_threshold / EAR_SLIDER_RANGE[2]))
+        self.over_slider.setValue(int(config.over_threshold / OVER_SLIDER_RANGE[2]))
+        self.under_slider.setValue(int(config.under_threshold / UNDER_SLIDER_RANGE[2]))
+
+        self.face_check.setChecked(config.enable_face_detection)
+        self.ear_slider.setEnabled(config.enable_face_detection)
+
+        self.level_check.setChecked(config.enable_level)
+        saved_method = config.level_method
+        idx = self.level_method_combo.findData(saved_method)
+        if idx >= 0:
+            self.level_method_combo.setCurrentIndex(idx)
+        saved_angle = config.level_angle_tolerance
+        slider_val = int(saved_angle / 0.5)
+        self.level_angle_slider.setValue(max(4, min(24, slider_val)))
+        self.level_angle_label.setText(f"{self.level_angle_slider.value() * 0.5:.1f}°")
+        self.level_method_combo.setEnabled(config.enable_level)
+        self.level_angle_slider.setEnabled(config.enable_level)
+
+        # 模糊
+        self.blur_check.setChecked(config.enable_blur)
+        self.blur_slider.setValue(max(2, min(40, int(config.blur_threshold / 5))))
+        self.blur_slider.setEnabled(config.enable_blur)
+
+        self.copy_check.setChecked(config.copy_mode)
+
+        # 恢复窗口几何
+        geo = config.window_geometry
+        if geo:
+            self.restoreGeometry(geo)
+        state = config.window_state
+        if state:
+            self.restoreState(state)
+
+    def _save_settings(self):
+        """保存当前设置到 QSettings。"""
+        config = self._app_config
+        config.input_dir = self.input_edit.text().strip()
+        config.output_dir = self.output_edit.text().strip()
+        config.ear_threshold = self.ear_slider.value() * EAR_SLIDER_RANGE[2]
+        config.over_threshold = self.over_slider.value() * OVER_SLIDER_RANGE[2]
+        config.under_threshold = self.under_slider.value() * UNDER_SLIDER_RANGE[2]
+        config.enable_face_detection = self.face_check.isChecked()
+        config.enable_blur = self.blur_check.isChecked()
+        config.blur_threshold = float(self.blur_slider.value() * 5)
+        config.enable_level = self.level_check.isChecked()
+        config.level_method = self.level_method_combo.currentData() or "horizon"
+        config.level_angle_tolerance = self.level_angle_slider.value() * 0.5
+        config.copy_mode = self.copy_check.isChecked()
+        config.window_geometry = self.saveGeometry()
+        config.window_state = self.saveState()
+
+    def closeEvent(self, event):
+        """窗口关闭时保存设置。分析中弹出确认。"""
+        if self.worker and self.worker.isRunning():
+            reply = QMessageBox.question(
+                self, "确认退出",
+                "照片分析正在进行中，确定要退出吗？\n\n退出后当前分析将被中断。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+            self._stop_analysis()
+        self._save_settings()
+        super().closeEvent(event)
+
+    # ── 拖拽支持 ──────────────────────────────────────────
+
+    def dragEnterEvent(self, event):
+        """拖拽进入窗口。"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        """处理拖放 — 自动填充文件夹路径。"""
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            if Path(path).is_dir():
+                self.input_edit.setText(path)
+
+    # ── 槽函数 ──────────────────────────────────────────────
+
+    def _browse_input(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择照片文件夹")
+        if folder:
+            self.input_edit.setText(folder)
+
+    def _browse_output(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择输出文件夹")
+        if folder:
+            self.output_edit.setText(folder)
+
+    def _get_current_config(self) -> DetectionConfig:
+        """从当前 UI 状态构建检测配置。"""
+        step_ear = EAR_SLIDER_RANGE[2]
+        step_over = OVER_SLIDER_RANGE[2]
+        step_under = UNDER_SLIDER_RANGE[2]
+        return DetectionConfig(
+            ear_threshold=self.ear_slider.value() * step_ear,
+            over_threshold=self.over_slider.value() * step_over,
+            under_threshold=self.under_slider.value() * step_under,
+            enable_face_detection=self.face_check.isChecked(),
+            enable_level=self.level_check.isChecked(),
+            level_method=self.level_method_combo.currentData(),
+            level_angle_tolerance=self.level_angle_slider.value() * 0.5,
+            blur_threshold=float(self.blur_slider.value() * 5),
+            enable_blur=self.blur_check.isChecked(),
+            enable_duplicate=self.duplicate_check.isChecked(),
+        )
+
+    # ── 检测选项辅助槽 ────────────────────────────────────────
+
+    def _on_face_toggled(self, checked: bool):
+        """人脸检测开关切换时启用/禁用睁眼滑块。"""
+        self.ear_slider.setEnabled(checked)
+
+    def _on_blur_toggled(self, checked: bool):
+        """模糊检测开关切换时启用/禁用宽容度滑块。"""
+        self.blur_slider.setEnabled(checked)
+
+    def _on_level_toggled(self, checked: bool):
+        """构图检测开关切换时启用/禁用子控件。"""
+        self.level_method_combo.setEnabled(checked)
+        self.level_angle_slider.setEnabled(checked)
+
+    def _on_level_angle_changed(self, value: int):
+        """构图严格度滑块变化时更新标签。"""
+        angle = value * 0.5
+        self.level_angle_label.setText(f"{angle:.1f}°")
+
+    def _on_level_method_changed(self, index: int):
+        """构图方法切换时更新滑块范围和默认值。"""
+        method = self.level_method_combo.currentData()
+        if method == "general":
+            # 通用检测：4°~20°, 步长1°, 默认9°
+            self.level_angle_slider.setMinimum(4)
+            self.level_angle_slider.setMaximum(20)
+            self.level_angle_slider.setValue(9)
+            self.level_angle_label.setText("9.0°")
+        else:
+            # 地平线检测：2°~12°, 步长0.5°, 默认5°
+            self.level_angle_slider.setMinimum(4)
+            self.level_angle_slider.setMaximum(24)
+            self.level_angle_slider.setValue(10)
+            self.level_angle_label.setText("5.0°")
+
+    def _start_analysis(self):
+        input_dir = self.input_edit.text().strip()
+        if not input_dir:
+            QMessageBox.warning(self, "提示", "请先选择照片文件夹。")
+            return
+        input_path = Path(input_dir)
+        if not input_path.is_dir():
+            QMessageBox.warning(self, "提示", f"文件夹不存在:\n{input_dir}")
+            return
+
+        photo_paths = sorted([
+            p for p in input_path.iterdir()
+            if p.suffix.lower() in SUPPORTED_EXTENSIONS and p.is_file()
+        ])
+        if not photo_paths:
+            QMessageBox.information(self, "提示", "该文件夹中没有找到照片文件。")
+            return
+
+        config = self._get_current_config()
+        output_dir = self.output_edit.text().strip() or None
+
+        self.table.setRowCount(0)
+        self.results_data = []
+        self.summary_label.setText("")
+        self.progress_bar.setMaximum(len(photo_paths))
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.status_label.setText("正在加载 AI 模型...")
+
+        self.worker = ProcessWorker(
+            photo_paths, config,
+            output_dir=output_dir,
+            copy_mode=self.copy_check.isChecked(),
+        )
+        self.worker.progress.connect(self._on_progress)
+        self.worker.finished_signal.connect(self._on_finished)
+        self.worker.error_signal.connect(self._on_error)
+        self.worker.status_update.connect(self.status_label.setText)
+        self.worker.start()
+
+    def _stop_analysis(self):
+        if self.worker and self.worker.isRunning():
+            self.status_label.setText("正在停止...")
+            self.worker.stop()
+            # 给 worker 一点时间优雅停止
+            self.worker.wait(3000)
+            if self.worker.isRunning():
+                self.worker.terminate_and_cleanup()
+            self.status_label.setText("已停止")
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self._update_summary()
+
+    def _on_progress(self, index, filename, passed, reason):
+        """处理进度更新。"""
+        self.progress_bar.setValue(index)
+        self.status_label.setText(f"分析中: {filename}")
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+
+        status_item = QTableWidgetItem("OK" if passed else "NG")
+        status_item.setTextAlignment(Qt.AlignCenter)
+        status_item.setForeground(QColor("#2e7d32") if passed else QColor("#e53935"))
+        self.table.setItem(row, 0, status_item)
+        self.table.setItem(row, 1, QTableWidgetItem(filename))
+
+        result_item = QTableWidgetItem("通过" if passed else "不合格")
+        result_item.setForeground(QColor("#2e7d32") if passed else QColor("#e53935"))
+        self.table.setItem(row, 2, result_item)
+        self.table.setItem(row, 3, QTableWidgetItem(reason))
+        self.table.scrollToBottom()
+
+    def _on_finished(self, results):
+        """分析完成。"""
+        self.results_data = results
+        self.progress_bar.setVisible(False)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.status_label.setText("分析完成")
+        self._update_summary()
+
+        # 彩蛋：根据合格率弹出魏老师评语（有人脸检测时触发更有意义）
+        if results and any(r.face_detected for r in results):
+            passed = [r for r in results if r.all_pass]
+            rate = len(passed) / len(results) * 100 if results else 0
+            if rate < 30:
+                QMessageBox.information(
+                    self, "魏老师点评", "你这拍的有什么意义呢？——魏老师")
+            elif rate > 80:
+                QMessageBox.information(
+                    self, "魏老师点评", "哇！代表作！——魏老师")
+
+    def _on_error(self, error_msg):
+        """处理错误。"""
+        self.progress_bar.setVisible(False)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.status_label.setText("发生错误")
+        QMessageBox.critical(self, "错误", f"处理过程中发生错误:\n\n{error_msg}")
+
+    def _update_summary(self):
+        """更新底部汇总栏。"""
+        if not self.results_data:
+            return
+        passed = [r for r in self.results_data if r.all_pass]
+        failed = [r for r in self.results_data if not r.all_pass]
+        no_face = [r for r in self.results_data if not r.face_detected]
+        has_face = [r for r in self.results_data if r.face_detected]
+        closed = [r for r in has_face if not r.eyes_open]
+        bad_skin = [r for r in has_face if not r.skin_ok]
+        bad_exp = [r for r in self.results_data if not r.exposure_ok]
+        bad_level = [r for r in self.results_data if r.level_enabled and not r.level_ok]
+        bad_blur = [r for r in self.results_data if r.blur_enabled and not r.blur_ok]
+
+        pct = len(passed) / len(self.results_data) * 100 if self.results_data else 0
+        parts = [
+            f"总计: {len(self.results_data)} 张",
+            f"合格: {len(passed)} 张 ({pct:.1f}%)",
+            f"不合格: {len(failed)} 张",
+            f"无人脸: {len(no_face)}",
+            f"闭眼: {len(closed)}",
+            f"肤色: {len(bad_skin)}",
+            f"曝光: {len(bad_exp)}",
+        ]
+        if bad_level:
+            parts.append(f"构图: {len(bad_level)}")
+        if bad_blur:
+            parts.append(f"模糊: {len(bad_blur)}")
+        self.summary_label.setText("  |  ".join(parts))
+
+    def _on_cell_double_clicked(self, row, col):
+        """双击表格行 — 用系统默认程序打开原图。"""
+        if not self.results_data or row >= len(self.results_data):
+            return
+        photo_path = self.results_data[row].path
+        if photo_path.exists():
+            import os
+            os.startfile(str(photo_path))
+
+    def _open_settings(self):
+        """打开设置对话框。"""
+        from gui.dialogs.settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self)
+        dlg.exec()

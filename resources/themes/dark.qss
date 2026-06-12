@@ -1,0 +1,103 @@
+/* 照片筛选工具 — 深色主题 */
+
+QGroupBox {
+    font-weight: bold;
+    border: 1px solid #444;
+    border-radius: 6px;
+    margin-top: 8px;
+    padding-top: 16px;
+    color: #ddd;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #ddd;
+}
+QPushButton {
+    padding: 6px 16px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #3a3a3a;
+    color: #ddd;
+}
+QPushButton:hover {
+    background: #4a4a4a;
+}
+QPushButton#startBtn {
+    background: #388E3C;
+    color: white;
+    border: none;
+    font-weight: bold;
+}
+QPushButton#startBtn:hover {
+    background: #43A047;
+}
+QPushButton#startBtn:disabled {
+    background: #555;
+    color: #888;
+}
+QTableWidget {
+    border: 1px solid #444;
+    border-radius: 4px;
+    gridline-color: #3a3a3a;
+    background: #2b2b2b;
+    alternate-background-color: #333;
+    color: #ddd;
+}
+QHeaderView::section {
+    background: #353535;
+    padding: 6px;
+    border: none;
+    border-bottom: 2px solid #444;
+    font-weight: bold;
+    color: #ddd;
+}
+QSlider::groove:horizontal {
+    border: 1px solid #555;
+    height: 6px;
+    background: #3a3a3a;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: #388E3C;
+    border: none;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+QProgressBar {
+    border: 1px solid #444;
+    border-radius: 4px;
+    text-align: center;
+    background: #353535;
+    color: #ddd;
+}
+QProgressBar::chunk {
+    background: #388E3C;
+    border-radius: 3px;
+}
+QCheckBox {
+    spacing: 6px;
+    color: #ddd;
+}
+QLabel {
+    color: #ddd;
+}
+QLineEdit {
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    background: #353535;
+    color: #ddd;
+}
+QLineEdit:focus {
+    border-color: #388E3C;
+}
+QMainWindow {
+    background-color: #1e1e1e;
+}
+QWidget {
+    background-color: #1e1e1e;
+}
