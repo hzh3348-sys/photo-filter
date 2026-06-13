@@ -18,7 +18,7 @@ class WelcomeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("欢迎")
-        self.setFixedSize(520, 420)
+        self.setMinimumSize(560, 440)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         self._config = AppConfig()
         self._setup_ui()

@@ -116,6 +116,14 @@ class AppConfig:
         self._settings.setValue("options/level_angle", value)
 
     @property
+    def prefer_raw(self) -> bool:
+        return bool(self._settings.value("options/prefer_raw", True))
+
+    @prefer_raw.setter
+    def prefer_raw(self, value: bool):
+        self._settings.setValue("options/prefer_raw", value)
+
+    @property
     def enable_blur(self) -> bool:
         return bool(self._settings.value("options/blur", False))
 

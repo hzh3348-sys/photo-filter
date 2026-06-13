@@ -21,6 +21,8 @@ from utils.constants import (
     MIN_FACE_DETECTION_CONFIDENCE,
     MIN_FACE_PRESENCE_CONFIDENCE,
     MIN_TRACKING_CONFIDENCE,
+    MAX_IMAGE_DIM,
+    FACE_DETECT_DIM,
 )
 from utils.image_io import load_image
 
@@ -73,7 +75,7 @@ class MediaPipeManager:
         options = FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_buffer=self.model_bytes),
             running_mode=VisionTaskRunningMode.IMAGE,
-            num_faces=5,              # v3.0: 支持多人脸（原来为1）
+            num_faces=30,             # v3.5: 合照支持最多30张脸
             min_face_detection_confidence=MIN_FACE_DETECTION_CONFIDENCE,
             min_face_presence_confidence=MIN_FACE_PRESENCE_CONFIDENCE,
             min_tracking_confidence=MIN_TRACKING_CONFIDENCE,
@@ -111,48 +113,64 @@ class MediaPipeManager:
         return MPImage, ImageFormat
 
 
-# ── 人脸检测（两轮，提升小脸检出率）─────────────────────
+# ── 人脸检测（三轮，极致检出）───────────────────────────
 
-def _detect_faces(img, mp_manager, retry_with_upsample=True):
+def _detect_faces(img, mp_manager):
     """
-    检测人脸，支持两轮检测提升小脸检出率。
-    第一轮：原图检测
-    第二轮（如果第一轮未检出）：放大图像后重试
+    三轮人脸检测，大幅提升小脸/侧脸/暗光检出率：
+    第1轮：原图检测
+    第2轮：放大到短边1200px
+    第3轮：放大到短边1800px + 中心裁剪
     """
     h, w = img.shape[:2]
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     MPImage, ImageFormat = MediaPipeManager.get_mp_classes()
-    mp_img = MPImage(image_format=ImageFormat.SRGB, data=rgb)
+    landmarker = mp_manager.get_landmarker()
 
-    try:
-        landmarker = mp_manager.get_landmarker()
-        face_result = landmarker.detect(mp_img)
-    except Exception:
-        return None
-
-    # 第一轮成功 → 直接返回
-    if face_result.face_landmarks:
+    def _try_detect(image):
+        """尝试检测单张图像的人脸。"""
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mp_img = MPImage(image_format=ImageFormat.SRGB, data=rgb)
+        try:
+            result = landmarker.detect(mp_img)
+        except Exception:
+            result = None
         del rgb, mp_img
+        return result
+
+    # 第1轮：原图
+    face_result = _try_detect(img)
+    if face_result and face_result.face_landmarks:
         return face_result
 
-    # 第二轮：放大图像（适用于小脸照片）
-    if retry_with_upsample and min(h, w) < 1200:
+    # 第2轮：放大到短边1200px
+    if min(h, w) < 1200:
         scale = 1200 / min(h, w)
-        new_w, new_h = int(w * scale), int(h * scale)
-        upsampled = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-        up_rgb = cv2.cvtColor(upsampled, cv2.COLOR_BGR2RGB)
-        up_mp_img = MPImage(image_format=ImageFormat.SRGB, data=up_rgb)
+        up = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
+        face_result = _try_detect(up)
+        del up
+        if face_result and face_result.face_landmarks:
+            return face_result
 
-        try:
-            face_result2 = landmarker.detect(up_mp_img)
-            del upsampled, up_rgb, up_mp_img
-            if face_result2.face_landmarks:
-                return face_result2
-        except Exception:
-            pass
+    # 第3轮：放大到短边1800px
+    if min(h, w) < 1800:
+        scale = 1800 / min(h, w)
+        up2 = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
+        face_result = _try_detect(up2)
+        del up2
+        if face_result and face_result.face_landmarks:
+            return face_result
 
-    del rgb, mp_img
-    return face_result  # 返回第一轮结果（空）
+    # 第3轮备选：中心50%区域放大（人脸通常在中间）
+    cy, cx = h // 2, w // 2
+    crop = img[cy//2:cy+cy//2, cx//2:cx+cx//2]
+    if crop.size > 0 and min(crop.shape[:2]) > 100:
+        scale = 1200 / min(crop.shape[:2])
+        crop_up = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)),
+                             interpolation=cv2.INTER_LANCZOS4)
+        face_result = _try_detect(crop_up)
+        del crop_up
+
+    return face_result
 
 
 # ── 单张照片检测 ──────────────────────────────────────────
@@ -172,11 +190,19 @@ def detect_single_photo(
     result.clarity_enabled = config.enable_clarity
     result.duplicate_enabled = config.enable_duplicate
 
-    # 1. 加载图片
-    img = load_image(path)
-    if img is None:
+    # 1. 加载图片（人脸检测用高分辨率，分析用常规分辨率）
+    img_face = load_image(path, max_dim=FACE_DETECT_DIM)   # 高分辨率：人脸检测
+    if img_face is None:
         result.error = "无法读取图片"
         return result
+
+    # 分析用图像（缩小到标准尺寸，节省后续计算）
+    hf, wf = img_face.shape[:2]
+    if max(hf, wf) > MAX_IMAGE_DIM:
+        scale = MAX_IMAGE_DIM / max(hf, wf)
+        img = cv2.resize(img_face, (int(wf * scale), int(hf * scale)))
+    else:
+        img = img_face
 
     # 2. 曝光检测（始终运行）
     result.exposure_ok, result.exposure_score = check_exposure(
@@ -196,35 +222,37 @@ def detect_single_photo(
 
     # 5. 人脸检测（可选开关）
     if config.enable_face_detection:
-        face_result = _detect_faces(img, mp_manager)
+        face_result = _detect_faces(img_face, mp_manager)  # 用高分辨率图像检测人脸
 
         if face_result and face_result.face_landmarks:
             result.face_detected = True
             result.face_count = len(face_result.face_landmarks)
 
-            # 多人脸：对每张脸评估，取最优
+            # 多人脸：每张脸独立评估，取最高总分（简单高效）
             best_eye_open = False
             best_eye_score = 0.0
             best_skin_ok = False
             best_skin_score = 0.0
             best_clarity_ok = True
             best_clarity_score = 1.0
+            best_total = -1.0
 
-            for i, landmarks in enumerate(face_result.face_landmarks):
-                eyes_open, eye_score = check_eyes_open(landmarks, img.shape, config.ear_threshold)
-                skin_ok, skin_score = check_skin_tone(img, landmarks)
+            for landmarks in face_result.face_landmarks:
+                eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
+                skin_ok, skin_score = check_skin_tone(img_face, landmarks)
+                total = eye_score + skin_score
 
-                if i == 0 or (eyes_open and not best_eye_open) or (skin_ok and not best_skin_ok):
-                    if eye_score + skin_score > best_eye_score + best_skin_score:
-                        best_eye_open = eyes_open
-                        best_eye_score = eye_score
-                        best_skin_ok = skin_ok
-                        best_skin_score = skin_score
+                if total > best_total:
+                    best_total = total
+                    best_eye_open = eyes_open
+                    best_eye_score = eye_score
+                    best_skin_ok = skin_ok
+                    best_skin_score = skin_score
 
                 if config.enable_clarity:
                     clarity_ok, clarity_score = check_face_clarity(
-                        img, landmarks, config.clarity_threshold)
-                    if i == 0 or clarity_score > best_clarity_score:
+                        img_face, landmarks, config.clarity_threshold)
+                    if clarity_score > best_clarity_score:
                         best_clarity_ok = clarity_ok
                         best_clarity_score = clarity_score
 
@@ -242,6 +270,6 @@ def detect_single_photo(
         result.error = "人脸检测已关闭"
 
     # 释放临时图片
-    del img
+    del img_face, img
 
     return result

@@ -59,6 +59,10 @@ class PhotoResult:
         if self.error and "异常" in self.error:
             return False
 
+        # 重复照片直接不合格
+        if self.is_duplicate_of:
+            return False
+
         ok = True
 
         # 曝光（始终检测）
@@ -132,6 +136,8 @@ class DetectionConfig:
     enable_level: bool = False
     level_method: str = "horizon"
     level_angle_tolerance: float = 5.0
+
+    prefer_raw: bool = True               # 重复时优先保留 RAW
 
     enable_blur: bool = False
     enable_clarity: bool = False

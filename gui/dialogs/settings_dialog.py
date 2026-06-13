@@ -59,6 +59,10 @@ class SettingsDialog(QDialog):
         self.copy_check = QCheckBox("默认复制（而非移动）合格照片")
         behavior_form.addRow(self.copy_check)
 
+        self.raw_check = QCheckBox("重复时优先保留 RAW（NEF/CR2等），标记 JPG")
+        self.raw_check.setToolTip("开启后，同一张照片的RAW和JPG版本中保留RAW原始文件")
+        behavior_form.addRow(self.raw_check)
+
         layout.addWidget(behavior_group)
 
         # ── 关于本软件 ──
@@ -68,43 +72,30 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v3.0</b></p>
+            <p><b>照片自动筛选工具 v4.0</b></p>
             <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复检测</p>
-            <p>作者：<b>HZH</b></p>
-            <p>GitHub：
-               <a href="https://github.com/hzh3348-sys/photo-filter">
-               github.com/hzh3348-sys/photo-filter</a></p>
+            <p>作者：<b>HZH</b> &nbsp;|&nbsp;
+               <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
             <hr>
-            <p style="font-weight:bold;">v3.0 更新日志</p>
-            <p style="font-size:11px; color:#555;">
-            <b>新增功能：</b><br>
-            + 模糊检测（多区域最清晰判断法 + 宽容度滑块）<br>
-            + 重复照片检测（dHash 感知哈希 + 汉明距离）<br>
-            + 人脸清晰度评分<br>
-            + 合照多人脸优选（取最佳人脸评估）<br>
-            + 深色模式 / 跟随系统主题<br>
-            + 人脸检测开关（关闭时仅检曝光，大幅提速）<br>
-            <br>
-            <b>构图检测升级：</b><br>
-            + 新增地平线检测法（只找长水平线，复杂场景不误判）<br>
-            + 保留通用检测法作为备选<br>
-            + 严格度滑块可调<br>
-            <br>
-            <b>性能与体验：</b><br>
-            + 多线程并行处理（2-4 workers）<br>
-            + 设置持久化（自动记忆阈值、目录、窗口布局）<br>
-            + 拖拽文件夹导入 + 双击查看原图<br>
-            + 退出确认（分析中关闭弹窗提示）<br>
-            + 小脸检测优化（降低置信度 + 两轮放大检测）<br>
-            + 肤色检测大幅放宽（兼容深色皮肤）<br>
-            + 模块化架构重构（core / gui / utils 分层）<br>
-            <br>
-            <b>v2.0 功能：</b><br>
-            + 曝光检测 + 肤色检测 + 睁眼检测 (EAR)<br>
-            + 构图水平检测 (Canny + Hough + MAD)<br>
-            + MediaPipe FaceLandmarker (468关键点)<br>
-            + 跨平台支持 (Windows / macOS)<br>
-            + GitHub Actions 自动构建发布
+
+            <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v4.0 全新升级</p>
+            <p style="font-size:12px; line-height:1.6;">
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>RAW 格式支持</b> — CR2/NEF/ARW/DNG 等 21 种格式，三层回退兼容新相机<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>苹果风格拨动开关</b> — 平滑动画 + 2x2 紧凑网格布局<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>界面全新设计</b> — 深色/浅色主题精调、实时预览窗、汇总卡片<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>彩色圆点状态</b> — ● 替代 OK/NG 文字，绿/红/橙一目了然<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>新手引导</b> — 首次启动弹出欢迎对话框<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>无级滑块</b> — 所有参数平滑调节，无档位感<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>人脸检测大幅增强</b> — 三轮放大 + 4800px 高分辨率 + 30 张脸合照<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>重复检测完善</b> — 同名 RAW+JPG 共存、进度条集成、列表回刷<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>退出确认</b> — 分析中关闭弹窗提示<br>
+            </p>
+
+            <p style="font-size:11px; color:#999; line-height:1.5;">
+            <b>v3.0 基础：</b>
+            多区域模糊检测 · dHash 重复检测 · 地平线检测 · 多线程并行 · 设置持久化 · 拖拽导入 · 双击预览 · 彩蛋评语 · 模块化架构<br>
+            <b>v2.0 原始：</b>
+            曝光检测 · 肤色检测 (EAR) · 睁眼检测 · 构图检测 · MediaPipe FaceLandmarker · 跨平台 · CI 自动构建
             </p>
         """)
         about_text.setMinimumHeight(280)
@@ -134,6 +125,7 @@ class SettingsDialog(QDialog):
         """从配置中加载当前值。"""
         self.workers_spin.setValue(self._config.max_workers)
         self.copy_check.setChecked(self._config.copy_mode)
+        self.raw_check.setChecked(self._config.prefer_raw)
 
         # 主题
         current_theme = self._config.theme
@@ -145,6 +137,7 @@ class SettingsDialog(QDialog):
         """保存设置并关闭。"""
         self._config.max_workers = self.workers_spin.value()
         self._config.copy_mode = self.copy_check.isChecked()
+        self._config.prefer_raw = self.raw_check.isChecked()
 
         # 主题
         new_theme = self.theme_combo.currentData()

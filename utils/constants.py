@@ -49,7 +49,8 @@ FACE_SKIN_IDX = [
 ]
 
 # ── 图片处理 ──────────────────────────────────────────────
-MAX_IMAGE_DIM = 2400               # 长边最大像素（v2.0: 原 1920 → 2400）
+MAX_IMAGE_DIM = 3600               # v3.5: 大幅提升以保留小脸细节 (1920→2400→3600)
+FACE_DETECT_DIM = 4800              # 人脸检测使用更高分辨率，不参与后续分析
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.webp'}
 
 # RAW 照片格式（v3.5）
@@ -74,9 +75,9 @@ RAW_EXTENSIONS = {
 ALL_SUPPORTED_EXTENSIONS = SUPPORTED_EXTENSIONS | RAW_EXTENSIONS
 
 # ── MediaPipe ────────────────────────────────────────────
-MIN_FACE_DETECTION_CONFIDENCE = 0.25   # v3.0: 降低以提高小脸检出率 (原0.4)
-MIN_FACE_PRESENCE_CONFIDENCE = 0.2     # v3.0: 降低 (原0.3)
-MIN_TRACKING_CONFIDENCE = 0.5
+MIN_FACE_DETECTION_CONFIDENCE = 0.15   # v3.5: 进一步降低提升敏感度 (0.4→0.25→0.15)
+MIN_FACE_PRESENCE_CONFIDENCE = 0.15    # v3.5: 降低 (0.3→0.2→0.15)
+MIN_TRACKING_CONFIDENCE = 0.3          # v3.5: 降低 (0.5→0.3)
 
 # ── 性能 ──────────────────────────────────────────────────
 DEFAULT_MAX_WORKERS = 2             # 并行处理线程数

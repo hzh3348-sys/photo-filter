@@ -5,13 +5,13 @@ metadata:
   type: project
 ---
 
-# 照片自动筛选工具 - 开发指南 (v3.0)
+# 照片自动筛选工具 - 开发指南 (v4.0)
 
 ## 项目信息
 
 - 作者：HZH
 - 仓库：https://github.com/hzh3348-sys/photo-filter
-- 版本：v3.0
+- 版本：v4.0
 
 ## 架构概览
 
@@ -73,6 +73,10 @@ resources/themes/{light, dark}.qss      ← theme_manager 加载
 - 模糊算法：`core/blur.py` → 4×4 网格 + 取前 25% 最清晰区域均值（浅景深不误判）
 - 地平线检测：`core/level.py` → `check_level_horizon()` (只找长水平线，聚类判断)
 - 并行线程数：`utils/constants.py` → `DEFAULT_MAX_WORKERS` (=2)
+- 苹果拨动开关：`gui/widgets/toggle_switch.py` → `ToggleSwitch` (动画 + 仅44px可点击)
+- 欢迎引导：`gui/dialogs/welcome_dialog.py` → 首次启动弹出 (AppConfig.first_run)
+- 实时预览：`gui/main_window.py` → `preview_label` (处理中右侧显示)
+- 汇总卡片：`gui/main_window.py` → `summary_cards` (绿/红/橙三色统计)
 - 彩蛋：`gui/main_window.py` → `_on_finished()` → 有人脸时合格率 <30% 或 >80% 弹魏老师点评
 - 主题文件：`resources/themes/light.qss`, `dark.qss`
 - 跟随系统主题：`gui/theme_manager.py` → `_detect_system_theme()` (Qt ColorScheme)

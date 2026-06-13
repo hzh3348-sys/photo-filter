@@ -1,5 +1,5 @@
 """
-主窗口 — 照片自动筛选工具 v3.5 GUI。
+主窗口 — 照片自动筛选工具 v4.0 GUI。
 从 photo_filter_gui.py 重构拆分。
 """
 
@@ -9,13 +9,14 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QSlider, QProgressBar,
     QTableWidget, QTableWidgetItem, QFileDialog, QGroupBox,
-    QCheckBox, QComboBox, QHeaderView, QMessageBox, QSplashScreen,
+    QCheckBox, QComboBox, QFrame, QHeaderView, QMessageBox, QSplashScreen,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen, QBrush
 
 from core.models import DetectionConfig
 from gui.worker import ProcessWorker
+from gui.widgets.toggle_switch import ToggleSwitch
 from gui.theme_manager import ThemeManager
 from utils.constants import (
     DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
@@ -49,7 +50,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v3.5")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v4.0")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -61,7 +62,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v3.5")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v4.0")
         self.setMinimumSize(920, 720)
         self.resize(1020, 780)
         self.results_data = []
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
 
         # 标题行 + 主题切换按钮
         title_row = QHBoxLayout()
-        title = QLabel("照片自动筛选工具 by HZH  v3.5")
+        title = QLabel("照片自动筛选工具 by HZH  v4.0")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -121,7 +122,7 @@ class MainWindow(QMainWindow):
         out_row.addWidget(btn_out)
         folder_layout.addLayout(out_row)
 
-        self.copy_check = QCheckBox("复制照片（否则移动）")
+        self.copy_check = ToggleSwitch("复制照片（否则移动）")
         self.copy_check.setChecked(True)
         folder_layout.addWidget(self.copy_check)
 
@@ -133,138 +134,135 @@ class MainWindow(QMainWindow):
         detect_layout.setSpacing(4)
         detect_layout.setContentsMargins(10, 14, 10, 8)
 
-        # ── 人脸检测开关 ──
-        face_row = QHBoxLayout()
-        self.face_check = QCheckBox("启用人脸检测（睁眼 + 肤色）")
+        # ── 开关（2x2 紧凑网格）──
+        toggle_grid = QHBoxLayout()
+        toggle_grid.setSpacing(10)
+        col_left = QVBoxLayout(); col_left.setSpacing(4)
+        col_right = QVBoxLayout(); col_right.setSpacing(4)
+
+        self.face_check = ToggleSwitch("启用人脸检测（睁眼+肤色）")
         self.face_check.setChecked(True)
         self.face_check.setToolTip("关闭后仅检测曝光、构图和模糊，大幅提升速度")
         self.face_check.toggled.connect(self._on_face_toggled)
-        face_row.addWidget(self.face_check)
-        face_row.addStretch()
-        detect_layout.addLayout(face_row)
+        col_left.addWidget(self.face_check)
 
-        # 睁眼灵敏度滑块
-        config = self._app_config
-        self.ear_slider = self._make_slider(
-            detect_layout, "睁眼灵敏度", config.ear_threshold,
-            EAR_SLIDER_RANGE[0], EAR_SLIDER_RANGE[1], EAR_SLIDER_RANGE[2],
-            "越小越宽容")
+        self.level_check = ToggleSwitch("检测构图水平")
+        self.level_check.setToolTip("检测照片是否倾斜，支持地平线和通用两种方法")
+        self.level_check.toggled.connect(self._on_level_toggled)
+        col_left.addWidget(self.level_check)
 
-        # 分隔线
-        sep1 = QLabel()
-        sep1.setFixedHeight(1)
-        sep1.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
-        detect_layout.addWidget(sep1)
+        # 构图检测子选项紧跟其后
+        level_detail_row = QHBoxLayout()
+        level_detail_row.setContentsMargins(2, 0, 0, 0)
+        level_detail_row.setSpacing(2)
+        self.level_method_combo = QComboBox()
+        self.level_method_combo.addItem("地平线检测（推荐）", "horizon")
+        self.level_method_combo.addItem("通用检测", "general")
+        self.level_method_combo.setToolTip("地平线检测：只找长水平线判断倾斜，复杂场景不误判 | 通用检测：分析所有线条角度一致性（适合建筑/室内）")
+        self.level_method_combo.setFixedWidth(162)
+        level_detail_row.addWidget(self.level_method_combo)
+        level_detail_row.addWidget(QLabel("  严格度"), 0)
+        self.level_angle_slider = QSlider(Qt.Horizontal)
+        self.level_angle_slider.setMinimum(4)
+        self.level_angle_slider.setMaximum(24)
+        self.level_angle_slider.setValue(10)
+        self.level_angle_slider.setFixedWidth(80)
+        level_detail_row.addWidget(self.level_angle_slider, 0)
+        self.level_angle_label = QLabel("5.0°")
+        self.level_angle_label.setFixedWidth(28)
+        self.level_angle_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        level_detail_row.addWidget(self.level_angle_label, 0)
+        level_detail_row.addStretch()
+        col_left.addLayout(level_detail_row)
+        self.level_method_combo.setEnabled(False)
+        self.level_angle_slider.setEnabled(False)
+        self.level_angle_slider.valueChanged.connect(self._on_level_angle_changed)
+        self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
 
-        # ── 曝光阈值 ──
-        self.over_slider = self._make_slider(
-            detect_layout, "过曝容忍度", config.over_threshold,
-            OVER_SLIDER_RANGE[0], OVER_SLIDER_RANGE[1], OVER_SLIDER_RANGE[2],
-            "越大越宽容")
-        self.under_slider = self._make_slider(
-            detect_layout, "欠曝容忍度", config.under_threshold,
-            UNDER_SLIDER_RANGE[0], UNDER_SLIDER_RANGE[1], UNDER_SLIDER_RANGE[2],
-            "越大越宽容")
+        self.blur_check = ToggleSwitch("检测模糊")
+        self.blur_check.setToolTip("智能检测模糊照片（取最清晰区域判断，浅景深不误判）")
+        self.blur_check.toggled.connect(self._on_blur_toggled)
+        col_right.addWidget(self.blur_check)
 
-        # 分隔线
-        sep2 = QLabel()
-        sep2.setFixedHeight(1)
-        sep2.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
-        detect_layout.addWidget(sep2)
+        # 模糊宽容度紧跟其后
+        blur_inline = QHBoxLayout()
+        blur_inline.setSpacing(4)
+        self.blur_slider = QSlider(Qt.Horizontal)
+        self.blur_slider.setMinimum(2)
+        self.blur_slider.setMaximum(40)
+        self.blur_slider.setValue(8)
+        blur_inline.addWidget(QLabel("宽容度"), 0)
+        self.blur_slider.setFixedWidth(100)
+        blur_inline.addWidget(self.blur_slider, 0)
+        self.blur_value_label = QLabel("40")
+        self.blur_value_label.setFixedWidth(24)
+        self.blur_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        blur_inline.addWidget(self.blur_value_label, 0)
+        blur_inline.addStretch()
+        self.blur_slider.setEnabled(False)
+        self.blur_slider.valueChanged.connect(
+            lambda v: self.blur_value_label.setText(str(v * 5)))
+        col_right.addLayout(blur_inline)
 
-        # ── 高级选项 展开/收起 ──
-        adv_toggle_row = QHBoxLayout()
-        self.adv_toggle_btn = QPushButton("▸ 高级选项（构图 / 模糊 / 重复）")
-        self.adv_toggle_btn.setFlat(True)
-        self.adv_toggle_btn.setCursor(Qt.PointingHandCursor)
-        self.adv_toggle_btn.setStyleSheet(
-            "QPushButton { color: #5c6bc0; font-size: 12px; border: none; background: transparent; padding: 2px 0; }"
-            "QPushButton:hover { color: #3949ab; }")
-        self.adv_toggle_btn.clicked.connect(self._toggle_advanced)
-        adv_toggle_row.addWidget(self.adv_toggle_btn)
-        adv_toggle_row.addStretch()
-        detect_layout.addLayout(adv_toggle_row)
+        self.duplicate_check = ToggleSwitch("检测重复照片")
+        self.duplicate_check.setToolTip("使用 dHash 感知哈希识别相似/重复照片")
+        col_right.addWidget(self.duplicate_check)
 
-        # ── 高级选项容器（默认折叠）──
+        toggle_grid.addLayout(col_left, 1)
+        toggle_grid.addLayout(col_right, 1)
+        detect_layout.addLayout(toggle_grid)
+
+
         self.advanced_widget = QWidget()
         self.advanced_widget.setVisible(False)
         adv_layout = QVBoxLayout(self.advanced_widget)
         adv_layout.setContentsMargins(0, 4, 0, 0)
         adv_layout.setSpacing(4)
+        # ── 阈值（双列紧凑）──
+        config = self._app_config
+        threshold_grid = QHBoxLayout()
+        threshold_grid.setSpacing(12)
+        col1 = QVBoxLayout(); col1.setSpacing(2)
+        col2 = QVBoxLayout(); col2.setSpacing(2)
 
-        # ── 构图检测 ──
-        self.level_check = QCheckBox("检测构图水平（横平竖直）")
-        self.level_check.setToolTip("检测照片是否倾斜，支持地平线和通用两种方法")
-        self.level_check.toggled.connect(self._on_level_toggled)
-        detect_layout.addWidget(self.level_check)
+        self.ear_slider = self._make_compact_slider(
+            col1, "睁眼灵敏度", config.ear_threshold,
+            EAR_SLIDER_RANGE[0], EAR_SLIDER_RANGE[1], EAR_SLIDER_RANGE[2])
+        self.over_slider = self._make_compact_slider(
+            col1, "过曝容忍度", config.over_threshold,
+            OVER_SLIDER_RANGE[0], OVER_SLIDER_RANGE[1], OVER_SLIDER_RANGE[2])
+        self.under_slider = self._make_compact_slider(
+            col2, "欠曝容忍度", config.under_threshold,
+            UNDER_SLIDER_RANGE[0], UNDER_SLIDER_RANGE[1], UNDER_SLIDER_RANGE[2])
 
-        level_detail_row = QHBoxLayout()
-        level_detail_row.setContentsMargins(24, 0, 0, 0)
-        level_detail_row.addWidget(QLabel("方法:"))
-        self.level_method_combo = QComboBox()
-        self.level_method_combo.addItem("地平线检测（推荐）", "horizon")
-        self.level_method_combo.addItem("通用检测", "general")
-        self.level_method_combo.setToolTip(
-            "地平线检测：只找长水平线判断倾斜，复杂场景不误判\n"
-            "通用检测：分析所有线条角度一致性（适合建筑/室内）")
-        level_detail_row.addWidget(self.level_method_combo)
-        level_detail_row.addSpacing(16)
-        level_detail_row.addWidget(QLabel("严格度:"))
-        self.level_angle_slider = QSlider(Qt.Horizontal)
-        self.level_angle_slider.setMinimum(4)
-        self.level_angle_slider.setMaximum(24)
-        self.level_angle_slider.setValue(10)
-        self.level_angle_slider.setTickPosition(QSlider.TicksBelow)
-        self.level_angle_slider.setTickInterval(4)
-        self.level_angle_slider.setFixedWidth(160)
-        level_detail_row.addWidget(self.level_angle_slider)
-        self.level_angle_label = QLabel("5.0°")
-        self.level_angle_label.setFixedWidth(40)
-        self.level_angle_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        level_detail_row.addWidget(self.level_angle_label)
-        level_detail_row.addWidget(QLabel("越小越严格"))
-        level_detail_row.addStretch()
-        detect_layout.addLayout(level_detail_row)
+        threshold_grid.addLayout(col1, 1)
+        threshold_grid.addLayout(col2, 1)
+        adv_layout.addLayout(threshold_grid)
 
-        self.level_method_combo.setEnabled(False)
-        self.level_angle_slider.setEnabled(False)
-        self.level_angle_slider.valueChanged.connect(self._on_level_angle_changed)
-        self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
-        # 模糊检测
-        self.blur_check = QCheckBox("检测照片模糊")
-        self.blur_check.setToolTip("智能检测模糊照片（多区域最清晰判断法，浅景深不误判）")
-        self.blur_check.toggled.connect(self._on_blur_toggled)
-        adv_layout.addWidget(self.blur_check)
+        # ── 高级选项 展开/收起 ──
 
-        blur_detail_row = QHBoxLayout()
-        blur_detail_row.setContentsMargins(24, 0, 0, 0)
-        blur_detail_row.addWidget(QLabel("宽容度:"))
-        self.blur_slider = QSlider(Qt.Horizontal)
-        self.blur_slider.setMinimum(2)
-        self.blur_slider.setMaximum(40)
-        self.blur_slider.setValue(8)
-        self.blur_slider.setTickPosition(QSlider.TicksBelow)
-        self.blur_slider.setTickInterval(4)
-        self.blur_slider.setFixedWidth(160)
-        blur_detail_row.addWidget(self.blur_slider)
-        self.blur_value_label = QLabel("40")
-        self.blur_value_label.setFixedWidth(36)
-        self.blur_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        blur_detail_row.addWidget(self.blur_value_label)
-        blur_detail_row.addWidget(QLabel("越大越宽容"))
-        blur_detail_row.addStretch()
-        adv_layout.addLayout(blur_detail_row)
+        adv_toggle_row = QHBoxLayout()
+        self.adv_toggle_btn = QPushButton("▸ 阈值调整")
+        self.adv_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.adv_toggle_btn.setMinimumHeight(32)
+        self.adv_toggle_btn.setStyleSheet(
+            "QPushButton {"
+            "  color: #5c6bc0; font-size: 12px; font-weight: bold;"
+            "  border: 1px dashed #b0b8d0; border-radius: 8px;"
+            "  background: #f0f3ff; padding: 6px 14px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #e4e8f8; border-color: #5c6bc0;"
+            "  color: #3949ab;"
+            "}")
+        self.adv_toggle_btn.clicked.connect(self._toggle_advanced)
+        adv_toggle_row.addWidget(self.adv_toggle_btn)
+        adv_toggle_row.addStretch()
+        detect_layout.addLayout(adv_toggle_row)
 
-        self.blur_slider.setEnabled(False)
-        self.blur_slider.valueChanged.connect(
-            lambda v: self.blur_value_label.setText(str(v * 5)))
 
-        self.duplicate_check = QCheckBox("检测重复照片")
-        self.duplicate_check.setToolTip("使用 dHash 感知哈希识别相似/重复照片")
-        adv_layout.addWidget(self.duplicate_check)
 
         detect_layout.addWidget(self.advanced_widget)
-        detect_layout.addWidget(self.duplicate_check)
 
         main_layout.addWidget(detect_group)
 
@@ -292,11 +290,15 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
 
-        # ── 表格 ──
+        # ── 表格 + 预览（左右分栏）──
+        split_row = QHBoxLayout()
+        split_row.setSpacing(8)
+
+        # 左侧：结果表格
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["状态", "文件名", "结果", "详情"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 50)
+        self.table.setColumnWidth(0, 40)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
@@ -305,15 +307,55 @@ class MainWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         # 双击打开原图
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
-        main_layout.addWidget(self.table, 1)
+        split_row.addWidget(self.table, 1)
 
-        # ── 汇总 ──
-        self.summary_label = QLabel("")
-        self.summary_label.setFont(QFont("", 10, QFont.Bold))
-        main_layout.addWidget(self.summary_label)
+        # 右侧：实时预览窗
+        self.preview_label = QLabel()
+        self.preview_label.setFixedWidth(220)
+        self.preview_label.setMinimumHeight(200)
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setStyleSheet(
+            "border: 1px solid #dce1e6; border-radius: 8px;"
+            "background: #f0f2f5; color: #999; font-size: 11px;")
+        self.preview_label.setText("预览")
+        self.preview_label.setVisible(False)
+        split_row.addWidget(self.preview_label)
+
+        main_layout.addLayout(split_row, 1)
+
+        # ── 汇总卡片 ──
+        self.summary_widget = QWidget()
+        self.summary_widget.setVisible(False)
+        summary_row = QHBoxLayout(self.summary_widget)
+        summary_row.setContentsMargins(0, 4, 0, 0)
+        summary_row.setSpacing(10)
+        self.summary_cards = {}
+        for key, label, color in [
+            ("pass", "合格", "#2e7d32"),
+            ("fail", "不合格", "#c62828"),
+            ("duplicate", "重复", "#e65100"),
+        ]:
+            card = QFrame()
+            card.setStyleSheet(f"background: {color}15; border: 1px solid {color}40;"
+                              f"border-radius: 8px; padding: 6px 12px;")
+            cl = QVBoxLayout(card)
+            cl.setSpacing(0)
+            cl.setContentsMargins(14, 8, 14, 8)
+            num = QLabel("0")
+            num.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold; border: none; background: transparent;")
+            num.setAlignment(Qt.AlignCenter)
+            cl.addWidget(num)
+            lbl = QLabel(label)
+            lbl.setStyleSheet(f"color: {color}; font-size: 11px; border: none; background: transparent;")
+            lbl.setAlignment(Qt.AlignCenter)
+            cl.addWidget(lbl)
+            summary_row.addWidget(card)
+            self.summary_cards[key] = num
+        summary_row.addStretch()
+        main_layout.addWidget(self.summary_widget)
 
         # 水印
-        watermark = QLabel("by HZH  v3.5")
+        watermark = QLabel("by HZH  v4.0")
         watermark.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         watermark.setStyleSheet("color: rgba(180,180,180,80); font-size: 11px;")
         main_layout.addWidget(watermark)
@@ -329,8 +371,6 @@ class MainWindow(QMainWindow):
         slider.setMinimum(int(min_v / step))
         slider.setMaximum(int(max_v / step))
         slider.setValue(int(default_val / step))
-        slider.setTickPosition(QSlider.TicksBelow)
-        slider.setTickInterval(int((max_v - min_v) / step / 10))
         row.addWidget(slider, 1)
 
         value_label = QLabel(f"{default_val:.2f}")
@@ -346,6 +386,30 @@ class MainWindow(QMainWindow):
         slider.valueChanged.connect(
             lambda v, vl=value_label, s=step: vl.setText(f"{v * s:.2f}"))
         parent_layout.addLayout(row)
+        return slider
+
+
+    def _make_compact_slider(self, layout, name, default_val, min_v, max_v, step):
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        label = QLabel(f"{name}:")
+        label.setStyleSheet("font-size: 11px; color: #555;")
+        row.addWidget(label)
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(int(min_v / step))
+        slider.setMaximum(int(max_v / step))
+        slider.setValue(int(default_val / step))
+        slider.setFixedWidth(120)
+        row.addWidget(slider, 0)
+        value_label = QLabel(f"{default_val:.2f}")
+        value_label.setFixedWidth(36)
+        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        value_label.setStyleSheet("font-size: 11px;")
+        row.addWidget(value_label, 0)
+        row.addStretch()
+        slider.valueChanged.connect(
+            lambda v, vl=value_label, s=step: vl.setText(f"{v * s:.2f}"))
+        layout.addLayout(row)
         return slider
 
     def _apply_style(self):
@@ -476,6 +540,7 @@ class MainWindow(QMainWindow):
             level_method=self.level_method_combo.currentData(),
             level_angle_tolerance=self.level_angle_slider.value() * 0.5,
             blur_threshold=float(self.blur_slider.value() * 5),
+            prefer_raw=self._app_config.prefer_raw,
             enable_blur=self.blur_check.isChecked(),
             enable_duplicate=self.duplicate_check.isChecked(),
         )
@@ -495,7 +560,7 @@ class MainWindow(QMainWindow):
         """展开/收起高级选项。"""
         visible = not self.advanced_widget.isVisible()
         self.advanced_widget.setVisible(visible)
-        self.adv_toggle_btn.setText("▾ 高级选项（构图 / 模糊 / 重复）" if visible else "▸ 高级选项（构图 / 模糊 / 重复）")
+        self.adv_toggle_btn.setText("▾ 阈值调整" if visible else "▸ 阈值调整")
 
     def _on_level_toggled(self, checked: bool):
         """构图检测开关切换时启用/禁用子控件。"""
@@ -546,10 +611,12 @@ class MainWindow(QMainWindow):
 
         self.table.setRowCount(0)
         self.results_data = []
-        self.summary_label.setText("")
-        self.progress_bar.setMaximum(len(photo_paths))
+        self.summary_widget.setVisible(False)
+        self._path_map = {p.name: str(p) for p in photo_paths}
+        self.progress_bar.setMaximum(len(photo_paths) + (1 if config.enable_duplicate else 0))
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
+        self.preview_label.setVisible(False)
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.status_label.setText("正在加载 AI 模型...")
@@ -584,18 +651,40 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"分析中: {filename}")
         row = self.table.rowCount()
         self.table.insertRow(row)
+        self.table.setRowHeight(row, 28)
 
-        status_item = QTableWidgetItem("OK" if passed else "NG")
+        # 彩色圆点替代 OK/NG
+        status_item = QTableWidgetItem("●" if passed else "●")
         status_item.setTextAlignment(Qt.AlignCenter)
         status_item.setForeground(QColor("#2e7d32") if passed else QColor("#e53935"))
+        fnt = QFont()
+        fnt.setPointSize(16)
+        status_item.setFont(fnt)
+        file_path = self._path_map.get(filename, "")
+        status_item.setData(Qt.UserRole, file_path)
         self.table.setItem(row, 0, status_item)
         self.table.setItem(row, 1, QTableWidgetItem(filename))
 
         result_item = QTableWidgetItem("通过" if passed else "不合格")
         result_item.setForeground(QColor("#2e7d32") if passed else QColor("#e53935"))
+        bf = QFont()
+        bf.setBold(True)
+        result_item.setFont(bf)
         self.table.setItem(row, 2, result_item)
         self.table.setItem(row, 3, QTableWidgetItem(reason))
         self.table.scrollToBottom()
+
+        # 实时预览
+        if file_path:
+            from pathlib import Path
+            pp = Path(file_path)
+            if pp.exists():
+                from PySide6.QtGui import QPixmap
+                pix = QPixmap(str(pp))
+                if not pix.isNull():
+                    self.preview_label.setPixmap(pix.scaled(
+                        220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    self.preview_label.setVisible(True)
 
     def _on_finished(self, results):
         """分析完成。"""
@@ -604,7 +693,28 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.status_label.setText("分析完成")
+
+        # 回刷表格：更新被标记为重复的行
+        dup_count = 0
+        path_to_row = {}
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item:
+                path_to_row[item.data(Qt.UserRole)] = row
+        for r in results:
+            if r.is_duplicate_of and str(r.path) in path_to_row:
+                row = path_to_row[str(r.path)]
+                self.table.item(row, 0).setText("●")
+                self.table.item(row, 0).setForeground(QColor("#e65100"))
+                self.table.item(row, 2).setText("重复")
+                self.table.item(row, 2).setForeground(QColor("#e65100"))
+                self.table.item(row, 3).setText(f"重复 → {r.is_duplicate_of.name}")
+                dup_count += 1
+
+        self.preview_label.setVisible(False)
         self._update_summary()
+        if dup_count > 0:
+            self.status_label.setText(f"分析完成  |  发现 {dup_count} 张重复照片")
 
         # 彩蛋：根据合格率弹出魏老师评语（有人脸检测时触发更有意义）
         if results and any(r.face_detected for r in results):
@@ -626,43 +736,30 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "错误", f"处理过程中发生错误:\n\n{error_msg}")
 
     def _update_summary(self):
-        """更新底部汇总栏。"""
+        """更新底部汇总卡片。"""
         if not self.results_data:
+            self.summary_widget.setVisible(False)
             return
         passed = [r for r in self.results_data if r.all_pass]
         failed = [r for r in self.results_data if not r.all_pass]
-        no_face = [r for r in self.results_data if not r.face_detected]
-        has_face = [r for r in self.results_data if r.face_detected]
-        closed = [r for r in has_face if not r.eyes_open]
-        bad_skin = [r for r in has_face if not r.skin_ok]
-        bad_exp = [r for r in self.results_data if not r.exposure_ok]
-        bad_level = [r for r in self.results_data if r.level_enabled and not r.level_ok]
-        bad_blur = [r for r in self.results_data if r.blur_enabled and not r.blur_ok]
+        dups = [r for r in self.results_data if r.is_duplicate_of]
 
-        pct = len(passed) / len(self.results_data) * 100 if self.results_data else 0
-        parts = [
-            f"总计: {len(self.results_data)} 张",
-            f"合格: {len(passed)} 张 ({pct:.1f}%)",
-            f"不合格: {len(failed)} 张",
-            f"无人脸: {len(no_face)}",
-            f"闭眼: {len(closed)}",
-            f"肤色: {len(bad_skin)}",
-            f"曝光: {len(bad_exp)}",
-        ]
-        if bad_level:
-            parts.append(f"构图: {len(bad_level)}")
-        if bad_blur:
-            parts.append(f"模糊: {len(bad_blur)}")
-        self.summary_label.setText("  |  ".join(parts))
+        self.summary_cards["pass"].setText(str(len(passed)))
+        self.summary_cards["fail"].setText(str(len(failed)))
+        self.summary_cards["duplicate"].setText(str(len(dups)))
+        self.summary_widget.setVisible(True)
 
     def _on_cell_double_clicked(self, row, col):
         """双击表格行 — 用系统默认程序打开原图。"""
-        if not self.results_data or row >= len(self.results_data):
+        item = self.table.item(row, 0)
+        if item is None:
             return
-        photo_path = self.results_data[row].path
-        if photo_path.exists():
-            import os
-            os.startfile(str(photo_path))
+        photo_path = item.data(Qt.UserRole)
+        if photo_path:
+            from pathlib import Path
+            if Path(photo_path).exists():
+                import os
+                os.startfile(str(photo_path))
 
     def _open_settings(self):
         """打开设置对话框。"""

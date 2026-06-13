@@ -52,6 +52,8 @@ class ProcessWorker(QThread):
             count = self._completed_count
             total = len(self.photo_paths)
 
+        # 总步数含重复检测
+        total_steps = total + (1 if self.config.enable_duplicate else 0)
         # 计算预估剩余时间
         if count > 1 and self._start_time > 0:
             elapsed = time.time() - self._start_time
@@ -61,9 +63,9 @@ class ProcessWorker(QThread):
                 eta_str = f"预估剩余: {remaining / 60:.0f} 分钟"
             else:
                 eta_str = f"预估剩余: {remaining:.0f} 秒"
-            self.status_update.emit(f"分析中: {filename}  ({count}/{total}, {eta_str})")
+            self.status_update.emit(f"分析中: {filename}  ({count}/{total_steps}, {eta_str})")
         else:
-            self.status_update.emit(f"分析中: {filename}  ({count}/{total})")
+            self.status_update.emit(f"分析中: {filename}  ({count}/{total_steps})")
 
         self.progress.emit(count, filename, passed, reason)
 
@@ -141,18 +143,31 @@ class ProcessWorker(QThread):
 
             # 重复检测后处理（可选）
             if self.config.enable_duplicate and not self._cancel_event.is_set():
-                self.status_update.emit("正在检测重复照片...")
                 dup_count = 0
                 try:
                     from core.duplicate import find_duplicates
+                    self.status_update.emit("正在检测重复照片...")
                     duplicates = find_duplicates(self.photo_paths, self.config.duplicate_hamming)
                     for dup_idx, orig_idx in duplicates.items():
-                        if dup_idx in results_dict:
-                            results_dict[dup_idx].is_duplicate_of = self.photo_paths[orig_idx]
-                            dup_count += 1
+                        if dup_idx not in results_dict or orig_idx not in results_dict:
+                            continue
+                        dup_path = self.photo_paths[dup_idx]
+                        orig_path = self.photo_paths[orig_idx]
+
+                        if dup_path.stem == orig_path.stem:
+                            continue
+
+                        results_dict[dup_idx].is_duplicate_of = orig_path
+                        dup_count += 1
                 except Exception as dup_err:
                     self.status_update.emit(f"重复检测出错: {dup_err}")
-                self.status_update.emit(
+
+                # 推进进度条到最终步
+                with self._progress_lock:
+                    self._completed_count += 1
+                self.progress.emit(
+                    self._completed_count, "",
+                    True,
                     f"重复检测完成 ({dup_count} 组相似照片)" if dup_count > 0
                     else "重复检测完成 (未发现重复)")
 
