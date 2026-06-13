@@ -148,6 +148,16 @@ class AppConfig:
     def copy_mode(self, value: bool):
         self._settings.setValue("options/copy_mode", value)
 
+    # ── 首次启动 ──────────────────────────────────────────
+
+    @property
+    def first_run(self) -> bool:
+        return bool(self._settings.value("ui/first_run", True))
+
+    @first_run.setter
+    def first_run(self, value: bool):
+        self._settings.setValue("ui/first_run", value)
+
     # ── UI ──────────────────────────────────────────────────
 
     @property

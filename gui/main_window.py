@@ -1,5 +1,5 @@
 """
-主窗口 — 照片自动筛选工具 v3.0 GUI。
+主窗口 — 照片自动筛选工具 v3.5 GUI。
 从 photo_filter_gui.py 重构拆分。
 """
 
@@ -19,7 +19,7 @@ from gui.worker import ProcessWorker
 from gui.theme_manager import ThemeManager
 from utils.constants import (
     DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
-    EAR_MIN, EAR_MAX, SUPPORTED_EXTENSIONS,
+    EAR_MIN, EAR_MAX, ALL_SUPPORTED_EXTENSIONS,
     OVER_SLIDER_RANGE, UNDER_SLIDER_RANGE, EAR_SLIDER_RANGE,
 )
 from utils.config import AppConfig
@@ -49,7 +49,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v3.0")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v3.5")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -61,7 +61,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v3.0")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v3.5")
         self.setMinimumSize(920, 720)
         self.resize(1020, 780)
         self.results_data = []
@@ -82,7 +82,7 @@ class MainWindow(QMainWindow):
 
         # 标题行 + 主题切换按钮
         title_row = QHBoxLayout()
-        title = QLabel("照片自动筛选工具 by HZH  v3.0")
+        title = QLabel("照片自动筛选工具 by HZH  v3.5")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -172,6 +172,26 @@ class MainWindow(QMainWindow):
         sep2.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
         detect_layout.addWidget(sep2)
 
+        # ── 高级选项 展开/收起 ──
+        adv_toggle_row = QHBoxLayout()
+        self.adv_toggle_btn = QPushButton("▸ 高级选项（构图 / 模糊 / 重复）")
+        self.adv_toggle_btn.setFlat(True)
+        self.adv_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.adv_toggle_btn.setStyleSheet(
+            "QPushButton { color: #5c6bc0; font-size: 12px; border: none; background: transparent; padding: 2px 0; }"
+            "QPushButton:hover { color: #3949ab; }")
+        self.adv_toggle_btn.clicked.connect(self._toggle_advanced)
+        adv_toggle_row.addWidget(self.adv_toggle_btn)
+        adv_toggle_row.addStretch()
+        detect_layout.addLayout(adv_toggle_row)
+
+        # ── 高级选项容器（默认折叠）──
+        self.advanced_widget = QWidget()
+        self.advanced_widget.setVisible(False)
+        adv_layout = QVBoxLayout(self.advanced_widget)
+        adv_layout.setContentsMargins(0, 4, 0, 0)
+        adv_layout.setSpacing(4)
+
         # ── 构图检测 ──
         self.level_check = QCheckBox("检测构图水平（横平竖直）")
         self.level_check.setToolTip("检测照片是否倾斜，支持地平线和通用两种方法")
@@ -210,27 +230,19 @@ class MainWindow(QMainWindow):
         self.level_angle_slider.setEnabled(False)
         self.level_angle_slider.valueChanged.connect(self._on_level_angle_changed)
         self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
-
-        # 分隔线
-        sep3 = QLabel()
-        sep3.setFixedHeight(1)
-        sep3.setStyleSheet("border-top: 1px solid #ddd; margin: 2px 0;")
-        detect_layout.addWidget(sep3)
-
-        # ── 其他检测 ──
+        # 模糊检测
         self.blur_check = QCheckBox("检测照片模糊")
-        self.blur_check.setToolTip("智能检测模糊照片（取最清晰区域判断，浅景深不误判）")
+        self.blur_check.setToolTip("智能检测模糊照片（多区域最清晰判断法，浅景深不误判）")
         self.blur_check.toggled.connect(self._on_blur_toggled)
-        detect_layout.addWidget(self.blur_check)
+        adv_layout.addWidget(self.blur_check)
 
-        # 模糊宽容度滑块（缩进显示）
         blur_detail_row = QHBoxLayout()
         blur_detail_row.setContentsMargins(24, 0, 0, 0)
         blur_detail_row.addWidget(QLabel("宽容度:"))
         self.blur_slider = QSlider(Qt.Horizontal)
-        self.blur_slider.setMinimum(2)    # 10 / 5
-        self.blur_slider.setMaximum(40)   # 200 / 5
-        self.blur_slider.setValue(8)      # 默认 40
+        self.blur_slider.setMinimum(2)
+        self.blur_slider.setMaximum(40)
+        self.blur_slider.setValue(8)
         self.blur_slider.setTickPosition(QSlider.TicksBelow)
         self.blur_slider.setTickInterval(4)
         self.blur_slider.setFixedWidth(160)
@@ -241,7 +253,7 @@ class MainWindow(QMainWindow):
         blur_detail_row.addWidget(self.blur_value_label)
         blur_detail_row.addWidget(QLabel("越大越宽容"))
         blur_detail_row.addStretch()
-        detect_layout.addLayout(blur_detail_row)
+        adv_layout.addLayout(blur_detail_row)
 
         self.blur_slider.setEnabled(False)
         self.blur_slider.valueChanged.connect(
@@ -249,6 +261,9 @@ class MainWindow(QMainWindow):
 
         self.duplicate_check = QCheckBox("检测重复照片")
         self.duplicate_check.setToolTip("使用 dHash 感知哈希识别相似/重复照片")
+        adv_layout.addWidget(self.duplicate_check)
+
+        detect_layout.addWidget(self.advanced_widget)
         detect_layout.addWidget(self.duplicate_check)
 
         main_layout.addWidget(detect_group)
@@ -273,6 +288,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(btn_row)
 
         self.progress_bar = QProgressBar()
+        self.progress_bar.setFormat("%p% (%v/%m)")
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
 
@@ -297,7 +313,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.summary_label)
 
         # 水印
-        watermark = QLabel("by HZH  v3.0")
+        watermark = QLabel("by HZH  v3.5")
         watermark.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         watermark.setStyleSheet("color: rgba(180,180,180,80); font-size: 11px;")
         main_layout.addWidget(watermark)
@@ -474,6 +490,13 @@ class MainWindow(QMainWindow):
         """模糊检测开关切换时启用/禁用宽容度滑块。"""
         self.blur_slider.setEnabled(checked)
 
+
+    def _toggle_advanced(self):
+        """展开/收起高级选项。"""
+        visible = not self.advanced_widget.isVisible()
+        self.advanced_widget.setVisible(visible)
+        self.adv_toggle_btn.setText("▾ 高级选项（构图 / 模糊 / 重复）" if visible else "▸ 高级选项（构图 / 模糊 / 重复）")
+
     def _on_level_toggled(self, checked: bool):
         """构图检测开关切换时启用/禁用子控件。"""
         self.level_method_combo.setEnabled(checked)
@@ -512,7 +535,7 @@ class MainWindow(QMainWindow):
 
         photo_paths = sorted([
             p for p in input_path.iterdir()
-            if p.suffix.lower() in SUPPORTED_EXTENSIONS and p.is_file()
+            if p.suffix.lower() in ALL_SUPPORTED_EXTENSIONS and p.is_file()
         ])
         if not photo_paths:
             QMessageBox.information(self, "提示", "该文件夹中没有找到照片文件。")

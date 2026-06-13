@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from gui.main_window import MainWindow, create_splash
+from utils.config import AppConfig
 
 
 def main():
@@ -40,6 +41,14 @@ def main():
 
     # 创建主窗口
     window = MainWindow()
+
+    # 首次启动弹出欢迎引导
+    config = AppConfig()
+    if config.first_run:
+        from gui.dialogs.welcome_dialog import WelcomeDialog
+        welcome = WelcomeDialog(window)
+        welcome.exec()
+
     splash.showMessage("就绪!", Qt.AlignHCenter | Qt.AlignBottom, QColor("#4CAF50"))
     app.processEvents()
     window.show()

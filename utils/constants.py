@@ -52,6 +52,27 @@ FACE_SKIN_IDX = [
 MAX_IMAGE_DIM = 2400               # 长边最大像素（v2.0: 原 1920 → 2400）
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.webp'}
 
+# RAW 照片格式（v3.5）
+RAW_EXTENSIONS = {
+    '.cr2', '.cr3',   # Canon
+    '.nef', '.nrw',   # Nikon
+    '.arw', '.srf',   # Sony
+    '.dng',           # Adobe / 手机
+    '.raf',           # Fujifilm
+    '.orf',           # Olympus
+    '.rw2',           # Panasonic
+    '.pef',           # Pentax
+    '.srw',           # Samsung
+    '.3fr',           # Hasselblad
+    '.mef', '.mrw',   # Minolta / Konica
+    '.x3f',           # Sigma
+    '.erf',           # Epson
+    '.kdc', '.dcr',   # Kodak
+    '.mos',           # Leaf
+    '.raw',           # 通用
+}
+ALL_SUPPORTED_EXTENSIONS = SUPPORTED_EXTENSIONS | RAW_EXTENSIONS
+
 # ── MediaPipe ────────────────────────────────────────────
 MIN_FACE_DETECTION_CONFIDENCE = 0.25   # v3.0: 降低以提高小脸检出率 (原0.4)
 MIN_FACE_PRESENCE_CONFIDENCE = 0.2     # v3.0: 降低 (原0.3)
