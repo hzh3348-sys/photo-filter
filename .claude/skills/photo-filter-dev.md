@@ -53,22 +53,26 @@ resources/themes/{light, dark}.qss      ← theme_manager 加载
 | `main_window.py` | 主窗口，所有 UI 控件和槽函数 |
 | `worker.py` | 多线程处理 (ThreadPoolExecutor) |
 | `theme_manager.py` | 浅色/深色主题切换 |
+| `widgets/toggle_switch.py` | 苹果风格拨动开关 [v4.0] |
 | `widgets/image_preview.py` | 缩略图预览组件 |
-| `dialogs/settings_dialog.py` | 设置对话框 |
+| `dialogs/settings_dialog.py` | 设置对话框 + 关于信息 |
+| `dialogs/welcome_dialog.py` | 首次启动欢迎引导 [v4.0] |
 
 ### 工具 (utils/)
 | 文件 | 功能 |
 |------|------|
 | `constants.py` | 所有默认阈值和配置常量 |
 | `config.py` | QSettings 持久化封装 (AppConfig 单例) |
-| `image_io.py` | Unicode 路径兼容的图片加载 |
+| `image_io.py` | Unicode 路径 + RAW 格式加载 [v4.0] |
 
 ## 关键代码位置
 
 - 检测阈值常量：`utils/constants.py`
 - 配置持久化：`utils/config.py` → `AppConfig` 单例类
-- 人脸检测参数：`core/pipeline.py` → `MediaPipeManager._create_landmarker()` (min_face_detection_confidence=0.25)
-- 小脸两轮检测：`core/pipeline.py` → `_detect_faces()` (首轮原图，次轮放大到 1200px)
+- 人脸检测参数：`core/pipeline.py` → `MediaPipeManager._create_landmarker()` (min_face_detection_confidence=0.15, num_faces=30)
+- 小脸三轮检测：`core/pipeline.py` → `_detect_faces()` (首轮原图→1200px→1800px+中心裁剪)
+- RAW 加载：`utils/image_io.py` → `load_raw_image()` (rawpy解码→内嵌JPEG→二进制提取 三层回退)
+- 人脸分析分辨率：`FACE_DETECT_DIM=4800` (独立于 `MAX_IMAGE_DIM=3600`)
 - 人脸检测开关：`DetectionConfig.enable_face_detection` → 关闭时跳过 MediaPipe
 - 模糊算法：`core/blur.py` → 4×4 网格 + 取前 25% 最清晰区域均值（浅景深不误判）
 - 地平线检测：`core/level.py` → `check_level_horizon()` (只找长水平线，聚类判断)
@@ -97,15 +101,15 @@ python -m pytest tests/ -v
 ```bash
 python build_v2.py
 ```
-产物在 `照片筛选GUI_v3.0_by_HZH/`（需更新 build_v2.py 中的名称）。
+产物在 `照片筛选GUI_v4.0_by_HZH/`。
 
 ### 第四步：提交 + 发布
 ```bash
 git add <改动文件>
 git commit -m "描述改动"
-git tag v3.X -m "版本说明"
+git tag v4.X -m "版本说明"
 git push origin master
-git push origin v3.X
+git push origin v4.X
 ```
 
 ## 打包注意事项
@@ -119,7 +123,8 @@ git push origin v3.X
 7. 中文路径：已用 `model_asset_buffer` 内存加载绕过 MediaPipe C++ 路径问题
 8. `--onedir` 模式（`--onefile` 有 DLL 加载问题）
 9. 构建用 PYPI 纯净 numpy（不含 MKL），否则体积暴增 250MB+
-10. CI 构建失败常见原因：`--hidden-import` 冗余/错误、资源路径不存在、入口文件不对
+10. rawpy 必须同时加入 pip install 列表和 `--collect-binaries rawpy`，否则 RAW 功能静默失效
+11. CI 构建失败常见原因：`--hidden-import` 冗余/错误、资源路径不存在、入口文件不对
 
 ## 添加新检测器
 

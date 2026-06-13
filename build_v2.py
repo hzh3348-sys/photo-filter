@@ -24,7 +24,7 @@ else:
     if os.path.exists(pkg_dir): shutil.rmtree(pkg_dir)
     os.makedirs(pkg_dir)
     subprocess.run([sys.executable, "-m", "pip", "install", "--target", pkg_dir,
-                    "opencv-python", "mediapipe", "PySide6", "pyinstaller", "--quiet"],
+                    "opencv-python", "mediapipe", "PySide6", "pyinstaller", "rawpy", "--quiet"],
                    check=True)
     plugins_dir = os.path.join(pkg_dir, "PySide6", "plugins")
     env = os.environ.copy()
