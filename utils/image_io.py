@@ -18,16 +18,54 @@ def _is_raw(path: Path) -> bool:
     return path.suffix.lower() in RAW_EXTENSIONS
 
 
+def _extract_jpeg_from_raw_bytes(data: bytes) -> Optional[np.ndarray]:
+    """
+    从 RAW 文件二进制数据中扫描提取最大的 JPEG 图像。
+    用于回退：当 rawpy 完全不支持该相机时（LibRaw 太老）。
+    返回 BGR 格式 numpy 数组，失败返回 None。
+    """
+    import struct
+    jpeg_start = b'\xff\xd8\xff'
+    best_img = None
+    best_area = 0
+    pos = 0
+    while True:
+        idx = data.find(jpeg_start, pos)
+        if idx < 0:
+            break
+        # 搜索 JPEG 结束标记 FF D9
+        end_idx = data.find(b'\xff\xd9', idx + 3)
+        if end_idx < 0:
+            break
+        jpeg_data = data[idx:end_idx + 2]
+        if len(jpeg_data) > 10000:  # 忽略太小的缩略图（<10KB）
+            img = cv2.imdecode(np.frombuffer(jpeg_data, np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                area = img.shape[0] * img.shape[1]
+                if area > best_area:
+                    best_img = img
+                    best_area = area
+        pos = end_idx + 2
+    return best_img
+
+
 def load_raw_image(path: Path, max_dim: int = MAX_IMAGE_DIM) -> Optional[np.ndarray]:
     """
-    用 rawpy 解码 RAW 照片，返回 BGR 格式 numpy 数组。
-    使用 half_size 快速解码，大图自动等比缩放。
+    解码 RAW 照片，三层回退策略：
+    1. rawpy 完整解码 (half_size, 快)
+    2. rawpy 提取内嵌 JPEG 预览
+    3. 二进制扫描提取最大 JPEG（兼容 LibRaw 不支持的新相机）
+
+    返回 BGR 格式 numpy 数组。
     """
     try:
         import rawpy
     except ImportError:
         return None
 
+    rgb = None
+
+    # ── 第1层：rawpy 完整解码 ──
     try:
         with rawpy.imread(str(path)) as raw:
             rgb = raw.postprocess(
@@ -37,7 +75,30 @@ def load_raw_image(path: Path, max_dim: int = MAX_IMAGE_DIM) -> Optional[np.ndar
                 output_color=rawpy.ColorSpace.sRGB,
             )
     except Exception:
-        return None
+        pass
+
+    # ── 第2层：rawpy 内嵌缩略图 ──
+    if rgb is None:
+        try:
+            with rawpy.imread(str(path)) as raw:
+                thumb = raw.extract_thumb()
+                if thumb is not None and hasattr(thumb, 'data') and thumb.data:
+                    img = cv2.imdecode(np.frombuffer(thumb.data, np.uint8), cv2.IMREAD_COLOR)
+                    if img is not None:
+                        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        except Exception:
+            pass
+
+    # ── 第3层：二进制扫描 RAW 文件中的 JPEG ──
+    if rgb is None:
+        try:
+            with open(path, 'rb') as f:
+                raw_bytes = f.read()
+            img = _extract_jpeg_from_raw_bytes(raw_bytes)
+            if img is not None:
+                rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        except Exception:
+            pass
 
     if rgb is None or rgb.size == 0:
         return None
