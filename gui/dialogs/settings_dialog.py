@@ -72,21 +72,21 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v4.0</b></p>
-            <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复检测</p>
+            <p><b>照片自动筛选工具 v5.0</b></p>
+            <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复 + 表情 + 红眼</p>
             <p>作者：<b>HZH</b> &nbsp;|&nbsp;
                <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
             <hr>
 
-            <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v4.0 全新升级</p>
+            <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v5.0 全新升级</p>
             <p style="font-size:12px; line-height:1.6;">
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>RAW 格式支持</b> — CR2/NEF/ARW/DNG 等 21 种格式，三层回退兼容新相机<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>苹果风格拨动开关</b> — 平滑动画 + 2x2 紧凑网格布局<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>界面全新设计</b> — 深色/浅色主题精调、实时预览窗、汇总卡片<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>彩色圆点状态</b> — ● 替代 OK/NG 文字，绿/红/橙一目了然<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>新手引导</b> — 首次启动弹出欢迎对话框<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>无级滑块</b> — 所有参数平滑调节，无档位感<br>
-            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>人脸检测大幅增强</b> — 三轮放大 + 4800px 高分辨率 + 30 张脸合照<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>合照模式</b> — 最优人脸 / 所有人脸双模式，会议合照每张脸都需过关<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>笑容/表情检测</b> — MediaPipe Blendshapes 52 种表情分析，筛选最佳笑容<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>红眼检测</b> — HSV 瞳孔区域分析，自动识别闪光灯红眼<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>曝光检测重构</b> — 与人脸完全解耦，极简像素统计，只拦极端情况<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>肤色检测升级</b> — 全脸区域采样替代逐点采样，抗关键点定位误差<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>单击预览</b> — 结果列表单击即时预览照片，双击打开原图<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>界面 3 列重构</b> — 新增表情/红眼控件，检测选项更丰富<br>
             <span style="font-weight:bold; color:#2e7d32;">+</span> <b>重复检测完善</b> — 同名 RAW+JPG 共存、进度条集成、列表回刷<br>
             <span style="font-weight:bold; color:#2e7d32;">+</span> <b>退出确认</b> — 分析中关闭弹窗提示<br>
             </p>

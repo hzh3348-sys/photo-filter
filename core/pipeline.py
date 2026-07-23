@@ -17,6 +17,8 @@ from .eyes import check_eyes_open
 from .skin_tone import check_skin_tone
 from .blur import check_blur  # v3.0: 多区域最清晰判断法
 from .clarity import check_face_clarity
+from .expression import check_expression_multi  # v5.0
+from .red_eye import check_red_eye_multi         # v5.0
 from utils.constants import (
     MIN_FACE_DETECTION_CONFIDENCE,
     MIN_FACE_PRESENCE_CONFIDENCE,
@@ -79,7 +81,7 @@ class MediaPipeManager:
             min_face_detection_confidence=MIN_FACE_DETECTION_CONFIDENCE,
             min_face_presence_confidence=MIN_FACE_PRESENCE_CONFIDENCE,
             min_tracking_confidence=MIN_TRACKING_CONFIDENCE,
-            output_face_blendshapes=False,
+            output_face_blendshapes=True,   # v5.0: 开启表情检测
             output_facial_transformation_matrixes=False,
         )
         return FaceLandmarker.create_from_options(options)
@@ -189,6 +191,9 @@ def detect_single_photo(
     result.blur_enabled = config.enable_blur
     result.clarity_enabled = config.enable_clarity
     result.duplicate_enabled = config.enable_duplicate
+    result.expression_enabled = config.enable_expression
+    result.red_eye_enabled = config.enable_red_eye
+    result.face_mode = config.face_mode
 
     # 1. 加载图片（人脸检测用高分辨率，分析用常规分辨率）
     img_face = load_image(path, max_dim=FACE_DETECT_DIM)   # 高分辨率：人脸检测
@@ -204,67 +209,75 @@ def detect_single_photo(
     else:
         img = img_face
 
-    # 2. 曝光检测（始终运行）
-    result.exposure_ok, result.exposure_score = check_exposure(
-        img, config.over_threshold, config.under_threshold)
+    # 2. 曝光检测（始终运行，纯中心加权，与人脸完全独立）
+    try:
+        result.exposure_ok, result.exposure_score = check_exposure(
+            img, config.over_threshold, config.under_threshold)
+    except Exception as e:
+        result.error = f"曝光检测异常: {e}"
+        return result
 
     # 3. 构图水平检测（可选）
     if config.enable_level:
-        result.level_ok, result.level_score = check_level(
-            img,
-            method=config.level_method,
-            angle_tolerance=config.level_angle_tolerance,
-        )
+        try:
+            result.level_ok, result.level_score = check_level(
+                img,
+                method=config.level_method,
+                angle_tolerance=config.level_angle_tolerance,
+            )
+        except Exception as e:
+            result.error = f"构图检测异常: {e}"
+            return result
 
-    # 4. 模糊检测（可选）— v3.1: 多区域最清晰判断法
+    # 4. 模糊检测（可选）
     if config.enable_blur:
-        result.blur_ok, result.blur_score = check_blur(img, config.blur_threshold)
+        try:
+            result.blur_ok, result.blur_score = check_blur(img, config.blur_threshold)
+        except Exception as e:
+            result.error = f"模糊检测异常: {e}"
+            return result
 
-    # 5. 人脸检测（可选开关）
+    # 5. 人脸检测（可选开关）— 与曝光完全独立，互不依赖
+    face_result = None
     if config.enable_face_detection:
-        face_result = _detect_faces(img_face, mp_manager)  # 用高分辨率图像检测人脸
+        face_result = _detect_faces(img_face, mp_manager)
 
-        if face_result and face_result.face_landmarks:
-            result.face_detected = True
-            result.face_count = len(face_result.face_landmarks)
+    # 6. 人脸相关检测（睁眼、肤色、表情、红眼等）
+    if config.enable_face_detection and face_result and face_result.face_landmarks:
+        result.face_detected = True
+        result.face_count = len(face_result.face_landmarks)
+        result.face_count_total = len(face_result.face_landmarks)
 
-            # 多人脸：每张脸独立评估，取最高总分（简单高效）
-            best_eye_open = False
-            best_eye_score = 0.0
-            best_skin_ok = False
-            best_skin_score = 0.0
-            best_clarity_ok = True
-            best_clarity_score = 1.0
-            best_total = -1.0
-
-            for landmarks in face_result.face_landmarks:
-                eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
-                skin_ok, skin_score = check_skin_tone(img_face, landmarks)
-                total = eye_score + skin_score
-
-                if total > best_total:
-                    best_total = total
-                    best_eye_open = eyes_open
-                    best_eye_score = eye_score
-                    best_skin_ok = skin_ok
-                    best_skin_score = skin_score
-
-                if config.enable_clarity:
-                    clarity_ok, clarity_score = check_face_clarity(
-                        img_face, landmarks, config.clarity_threshold)
-                    if clarity_score > best_clarity_score:
-                        best_clarity_ok = clarity_ok
-                        best_clarity_score = clarity_score
-
-            result.eyes_open = best_eye_open
-            result.eye_score = best_eye_score
-            result.skin_ok = best_skin_ok
-            result.skin_score = best_skin_score
-            if config.enable_clarity:
-                result.clarity_ok = best_clarity_ok
-                result.clarity_score = best_clarity_score
+        # ── 按 face_mode 策略评估睁眼 + 肤色 + 清晰度 ──
+        if config.face_mode == "all":
+            _evaluate_all_faces(result, face_result, img_face, config)
         else:
-            result.error = "未检测到人脸"
+            _evaluate_best_face(result, face_result, img_face, config)
+
+        # ── v5.0: 表情检测（可选）──
+        if config.enable_expression and face_result.face_blendshapes:
+            exp_ok, exp_score, exp_detail, _, _ = check_expression_multi(
+                face_result.face_blendshapes,
+                smile_threshold=config.expression_smile_threshold,
+                face_mode=config.face_mode,
+            )
+            result.expression_ok = exp_ok
+            result.expression_score = exp_score
+            result.expression_detail = exp_detail
+
+        # ── v5.0: 红眼检测（可选）──
+        if config.enable_red_eye:
+            re_ok, re_score, re_count = check_red_eye_multi(
+                img_face, face_result.face_landmarks,
+                threshold=config.red_eye_threshold,
+                face_mode=config.face_mode,
+            )
+            result.red_eye_ok = re_ok
+            result.red_eye_score = re_score
+            result.red_eye_count = re_count
+    elif config.enable_face_detection:
+        # 人脸检测开启但未检测到人脸
+        result.error = "未检测到人脸"
     else:
         # 人脸检测关闭 — 仅检测曝光等，人脸相关项默认通过
         result.error = "人脸检测已关闭"
@@ -273,3 +286,143 @@ def detect_single_photo(
     del img_face, img
 
     return result
+
+
+def _evaluate_best_face(
+    result: PhotoResult, face_result, img_face, config: DetectionConfig,
+):
+    """
+    最优人脸策略：在所有人脸中取评分最高的一张进行评估。
+    适用于生活照场景（单人照或小合照），只需有人拍得好就行。
+    """
+    best_eye_open = False
+    best_eye_score = 0.0
+    best_skin_ok = False
+    best_skin_score = 0.0
+    best_clarity_ok = True
+    best_clarity_score = 1.0
+    best_total = -1.0
+    fail_count = 0
+    eye_fail = 0
+    skin_fail = 0
+
+    for landmarks in face_result.face_landmarks:
+        try:
+            eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
+        except Exception:
+            eyes_open, eye_score = True, 0.5
+        try:
+            skin_ok, skin_score = check_skin_tone(img_face, landmarks)
+        except Exception:
+            skin_ok, skin_score = True, 0.5
+        total = eye_score + skin_score
+
+        if not eyes_open:
+            eye_fail += 1
+        if not skin_ok:
+            skin_fail += 1
+        if not eyes_open or not skin_ok:
+            fail_count += 1
+
+        if total > best_total:
+            best_total = total
+            best_eye_open = eyes_open
+            best_eye_score = eye_score
+            best_skin_ok = skin_ok
+            best_skin_score = skin_score
+
+        if config.enable_clarity:
+            try:
+                clarity_ok, clarity_score = check_face_clarity(
+                    img_face, landmarks, config.clarity_threshold)
+            except Exception:
+                clarity_ok, clarity_score = True, 0.5
+            if clarity_score > best_clarity_score:
+                best_clarity_ok = clarity_ok
+                best_clarity_score = clarity_score
+
+    result.eyes_open = best_eye_open
+    result.eye_score = best_eye_score
+    result.skin_ok = best_skin_ok
+    result.skin_score = best_skin_score
+    if config.enable_clarity:
+        result.clarity_ok = best_clarity_ok
+        result.clarity_score = best_clarity_score
+
+    # 记录统计信息（即使 best 模式也记录，方便用户了解）
+    result.face_count_fail = fail_count
+    detail_parts = []
+    if eye_fail > 0:
+        detail_parts.append(f"{eye_fail}人闭眼")
+    if skin_fail > 0:
+        detail_parts.append(f"{skin_fail}人肤色异常")
+    result.face_detail = ", ".join(detail_parts)
+
+
+def _evaluate_all_faces(
+    result: PhotoResult, face_result, img_face, config: DetectionConfig,
+):
+    """
+    所有人脸策略：每张人脸都必须通过睁眼 + 肤色检测。
+    适用于会议/活动合照场景，任何一个人出问题就淘汰照片。
+    """
+    all_eyes_open = True
+    all_skin_ok = True
+    all_clarity_ok = True
+    worst_eye_score = 1.0
+    worst_skin_score = 1.0
+    worst_clarity_score = 1.0
+    eye_fail = 0
+    skin_fail = 0
+    clarity_fail = 0
+
+    for landmarks in face_result.face_landmarks:
+        try:
+            eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
+        except Exception:
+            eyes_open, eye_score = True, 0.5
+        try:
+            skin_ok, skin_score = check_skin_tone(img_face, landmarks)
+        except Exception:
+            skin_ok, skin_score = True, 0.5
+
+        if not eyes_open:
+            all_eyes_open = False
+            eye_fail += 1
+        if not skin_ok:
+            all_skin_ok = False
+            skin_fail += 1
+
+        worst_eye_score = min(worst_eye_score, eye_score)
+        worst_skin_score = min(worst_skin_score, skin_score)
+
+        if config.enable_clarity:
+            try:
+                clarity_ok, clarity_score = check_face_clarity(
+                    img_face, landmarks, config.clarity_threshold)
+            except Exception:
+                clarity_ok, clarity_score = True, 0.5
+            if not clarity_ok:
+                all_clarity_ok = False
+                clarity_fail += 1
+            worst_clarity_score = min(worst_clarity_score, clarity_score)
+
+    result.eyes_open = all_eyes_open
+    result.eye_score = worst_eye_score
+    result.skin_ok = all_skin_ok
+    result.skin_score = worst_skin_score
+    if config.enable_clarity:
+        result.clarity_ok = all_clarity_ok
+        result.clarity_score = worst_clarity_score
+
+    # 统计信息
+    total_fail = eye_fail + skin_fail + clarity_fail
+    result.face_count_fail = total_fail
+    detail_parts = []
+    if eye_fail > 0:
+        detail_parts.append(f"{eye_fail}人闭眼")
+    if skin_fail > 0:
+        detail_parts.append(f"{skin_fail}人肤色异常")
+    if clarity_fail > 0:
+        detail_parts.append(f"{clarity_fail}人模糊")
+    result.face_detail = ", ".join(detail_parts)

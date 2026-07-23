@@ -44,11 +44,32 @@ class PhotoResult:
     is_duplicate_of: Optional[Path] = None
     duplicate_group: int = -1
 
+    # ── v5.0 新增 ──
+    # 表情（笑容/自然度）
+    expression_ok: bool = True
+    expression_score: float = 1.0
+    expression_detail: str = ""     # 多人脸时的汇总，如 "3人不笑, 1人张嘴"
+
+    # 红眼
+    red_eye_ok: bool = True
+    red_eye_score: float = 1.0
+    red_eye_count: int = 0          # 红眼人脸数
+
+    # 合照模式信息
+    face_count_fail: int = 0        # 不合格人脸数（仅 face_mode="all" 时有意义）
+    face_count_total: int = 0       # 总人脸数
+    face_detail: str = ""           # 详细描述，如 "1人闭眼, 2人肤色异常"
+
     # 检测开关标记
     level_enabled: bool = False
     blur_enabled: bool = False
     clarity_enabled: bool = False
     duplicate_enabled: bool = False
+    expression_enabled: bool = False
+    red_eye_enabled: bool = False
+
+    # 合照模式
+    face_mode: str = "best"         # "best" 或 "all"
 
     # 错误
     error: Optional[str] = None
@@ -74,6 +95,12 @@ class PhotoResult:
             # 可选：清晰度
             if self.clarity_enabled:
                 ok = ok and self.clarity_ok
+            # 可选：表情
+            if self.expression_enabled:
+                ok = ok and self.expression_ok
+            # 可选：红眼
+            if self.red_eye_enabled:
+                ok = ok and self.red_eye_ok
 
         # 可选检测
         if self.level_enabled:
@@ -104,9 +131,15 @@ class PhotoResult:
                 reasons.append("无人脸(曝光通过)")
         else:
             if not self.eyes_open:
-                reasons.append("闭眼")
+                if self.face_mode == "all" and self.face_detail:
+                    reasons.append(f"闭眼({self.face_detail})")
+                else:
+                    reasons.append("闭眼")
             if not self.skin_ok:
-                reasons.append("肤色异常")
+                if self.face_mode == "all" and self.face_detail:
+                    reasons.append(f"肤色异常({self.face_detail})")
+                else:
+                    reasons.append("肤色异常")
             if not self.exposure_ok:
                 reasons.append("曝光异常")
             if self.level_enabled and not self.level_ok:
@@ -115,6 +148,13 @@ class PhotoResult:
                 reasons.append("模糊")
             if self.clarity_enabled and not self.clarity_ok:
                 reasons.append("人脸模糊")
+            if self.expression_enabled and not self.expression_ok:
+                if self.expression_detail:
+                    reasons.append(f"表情({self.expression_detail})")
+                else:
+                    reasons.append("表情欠佳")
+            if self.red_eye_enabled and not self.red_eye_ok:
+                reasons.append(f"红眼({self.red_eye_count}人)")
 
         return ", ".join(reasons) if reasons else "通过"
 
@@ -131,6 +171,17 @@ class DetectionConfig:
 
     # 人脸检测
     enable_face_detection: bool = True       # 启用人脸检测（睁眼+肤色），关闭则仅检曝光
+
+    # 合照模式: "best" 取最优人脸 / "all" 所有人脸通过才算合格
+    face_mode: str = "best"
+
+    # 表情检测（笑容/自然度）
+    enable_expression: bool = False
+    expression_smile_threshold: float = 0.3  # smile blendshape 阈值
+
+    # 红眼检测
+    enable_red_eye: bool = False
+    red_eye_threshold: float = 0.08          # 眼部红色像素占比阈值
 
     # 构图检测
     enable_level: bool = False

@@ -85,6 +85,9 @@ class ProcessWorker(QThread):
             result.blur_enabled = self.config.enable_blur
             result.clarity_enabled = self.config.enable_clarity
             result.duplicate_enabled = self.config.enable_duplicate
+            result.expression_enabled = self.config.enable_expression
+            result.red_eye_enabled = self.config.enable_red_eye
+            result.face_mode = self.config.face_mode
 
         return result
 

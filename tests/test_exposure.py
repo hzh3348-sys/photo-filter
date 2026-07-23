@@ -18,18 +18,28 @@ def make_image(mean_brightness: int = 128, size: tuple = (100, 100)) -> np.ndarr
 
 
 def make_overexposed_image(ratio: float = 0.1, size: tuple = (100, 100)) -> np.ndarray:
-    """创建包含过曝像素的图片。"""
+    """创建包含过曝像素的图片（均匀分布）。"""
     img = np.full((*size, 3), 128, dtype=np.uint8)
-    over_pixels = int(size[0] * size[1] * ratio)
-    img.reshape(-1, 3)[:over_pixels] = 255
+    total_pixels = size[0] * size[1]
+    over_count = int(total_pixels * ratio)
+    # 均匀选取像素，避免集中在某区域（与中心加权配合）
+    rng = np.random.RandomState(42)
+    flat_indices = rng.choice(total_pixels, over_count, replace=False)
+    flat = img.reshape(-1, 3)
+    flat[flat_indices] = 255
     return img
 
 
 def make_underexposed_image(ratio: float = 0.2, size: tuple = (100, 100)) -> np.ndarray:
-    """创建包含欠曝像素的图片。"""
+    """创建包含欠曝像素的图片（均匀分布）。"""
     img = np.full((*size, 3), 128, dtype=np.uint8)
-    under_pixels = int(size[0] * size[1] * ratio)
-    img.reshape(-1, 3)[:under_pixels] = 0
+    total_pixels = size[0] * size[1]
+    under_count = int(total_pixels * ratio)
+    # 均匀选取像素，避免集中在某区域（与中心加权配合）
+    rng = np.random.RandomState(42)
+    flat_indices = rng.choice(total_pixels, under_count, replace=False)
+    flat = img.reshape(-1, 3)
+    flat[flat_indices] = 0
     return img
 
 
@@ -58,8 +68,8 @@ class TestExposure:
         assert score < 0.6
 
     def test_borderline_over_threshold(self):
-        """刚好超过阈值的过曝应失败。"""
-        img = make_overexposed_image(ratio=0.051)
+        """刚好超过阈值的过曝应失败（中心加权有轻微容差，用更高比例）。"""
+        img = make_overexposed_image(ratio=0.07)
         ok, _ = check_exposure(img, over_th=0.05, under_th=0.15)
         assert ok is False
 

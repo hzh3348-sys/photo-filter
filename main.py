@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-照片自动筛选工具 v3.0 — 主入口。
+照片自动筛选工具 v5.0 — 主入口。
 """
 
 import sys
@@ -22,7 +22,7 @@ from utils.config import AppConfig
 def main():
     """启动 GUI 应用。"""
     app = QApplication(sys.argv)
-    app.setApplicationName("照片筛选工具 v3.0")
+    app.setApplicationName("照片筛选工具 v5.0")
 
     # 高 DPI 适配
     try:

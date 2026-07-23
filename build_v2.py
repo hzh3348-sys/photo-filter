@@ -12,23 +12,14 @@ for f in ["照片筛选GUI_by_HZH.spec"]:
     fp = os.path.join(os.getcwd(), f)
     if os.path.exists(fp): os.remove(fp)
 
-# 准备依赖包目录
-pkg_dir = os.path.join(os.getcwd(), "build_pkgs")
-if IS_CI:
-    # CI 环境：复用已安装的系统包，直接找 PySide6 插件位置
-    import PySide6 as _ps
-    plugins_dir = os.path.join(os.path.dirname(_ps.__file__), "plugins")
-    env = os.environ.copy()
-else:
-    # 本地：安装纯净包到 build_pkgs 避免 Anaconda MKL 膨胀
-    if os.path.exists(pkg_dir): shutil.rmtree(pkg_dir)
-    os.makedirs(pkg_dir)
-    subprocess.run([sys.executable, "-m", "pip", "install", "--target", pkg_dir,
-                    "opencv-python", "mediapipe", "PySide6", "pyinstaller", "rawpy", "--quiet"],
-                   check=True)
-    plugins_dir = os.path.join(pkg_dir, "PySide6", "plugins")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = pkg_dir
+# 直接用系统已安装的包（保证版本与开发环境一致）
+# Anaconda: Qt 插件在 <prefix>/Library/plugins，pip: 在 PySide6/plugins/
+import PySide6 as _ps
+_ps_dir = os.path.dirname(_ps.__file__)
+pip_plugins = os.path.join(_ps_dir, "plugins")
+conda_plugins = os.path.join(sys.prefix, "Library", "plugins")
+plugins_dir = pip_plugins if os.path.exists(pip_plugins) else conda_plugins
+env = os.environ.copy()
 
 model_file = os.path.join(os.getcwd(), "face_landmarker.task")
 themes_dir = os.path.join(os.getcwd(), "resources", "themes")
@@ -36,7 +27,7 @@ themes_dir = os.path.join(os.getcwd(), "resources", "themes")
 cmd = [
     sys.executable, "-m", "PyInstaller",
     "--onedir", "--windowed",
-    "--name", "照片筛选GUI_v4.0_by_HZH",
+    "--name", "照片筛选GUI_v5.0_by_HZH",
     "--icon", os.path.join(os.getcwd(), "app_icon.ico"),
     "--add-data", f"{model_file};.",
     "--add-data", f"{themes_dir};resources/themes",
@@ -67,7 +58,7 @@ cmd = [
 ]
 
 print("=" * 50)
-print("  打包 v4.0 (--onedir 便携模式)")
+print("  打包 v5.0 (--onedir 便携模式)")
 print("=" * 50)
 print(f"  模型: {model_file}")
 print(f"  插件: {plugins_dir}")
@@ -86,9 +77,9 @@ if result.stderr:
 print(f"\n构建{'成功' if result.returncode == 0 else '失败'} (exit: {result.returncode})")
 
 if result.returncode == 0:
-    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v4.0_by_HZH")
-    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v4.0_by_HZH")
-    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v4.0_by_HZH.zip")
+    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v5.0_by_HZH")
+    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.0_by_HZH")
+    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.0_by_HZH.zip")
 
     # 清理旧版
     if os.path.exists(folder_dst): shutil.rmtree(folder_dst, ignore_errors=True)

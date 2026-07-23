@@ -1,5 +1,5 @@
 """
-主窗口 — 照片自动筛选工具 v4.0 GUI。
+主窗口 — 照片自动筛选工具 v5.0 GUI。
 从 photo_filter_gui.py 重构拆分。
 """
 
@@ -20,8 +20,11 @@ from gui.widgets.toggle_switch import ToggleSwitch
 from gui.theme_manager import ThemeManager
 from utils.constants import (
     DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
+    DEFAULT_EXPRESSION_SMILE_THRESHOLD, DEFAULT_RED_EYE_THRESHOLD,
     EAR_MIN, EAR_MAX, ALL_SUPPORTED_EXTENSIONS,
     OVER_SLIDER_RANGE, UNDER_SLIDER_RANGE, EAR_SLIDER_RANGE,
+    EXPRESSION_SMILE_SLIDER_RANGE, RED_EYE_SLIDER_RANGE,
+    FACE_MODES, FACE_MODE_BEST, FACE_MODE_ALL,
 )
 from utils.config import AppConfig
 
@@ -50,7 +53,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v4.0")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.0")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -62,7 +65,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v4.0")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v5.0")
         self.setMinimumSize(920, 720)
         self.resize(1020, 780)
         self.results_data = []
@@ -83,7 +86,7 @@ class MainWindow(QMainWindow):
 
         # 标题行 + 主题切换按钮
         title_row = QHBoxLayout()
-        title = QLabel("照片自动筛选工具 by HZH  v4.0")
+        title = QLabel("照片自动筛选工具 by HZH  v5.0")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -134,18 +137,64 @@ class MainWindow(QMainWindow):
         detect_layout.setSpacing(4)
         detect_layout.setContentsMargins(10, 14, 10, 8)
 
-        # ── 开关（2x2 紧凑网格）──
+        # ── 开关（3列紧凑网格）──
         toggle_grid = QHBoxLayout()
         toggle_grid.setSpacing(10)
         col_left = QVBoxLayout(); col_left.setSpacing(4)
+        col_mid = QVBoxLayout(); col_mid.setSpacing(4)
         col_right = QVBoxLayout(); col_right.setSpacing(4)
 
+        # ── 左列：人脸检测 + 合照模式 + 表情 ──
+
+        # 人脸检测 + 合照模式（同行）
+        face_row = QHBoxLayout()
+        face_row.setSpacing(6)
         self.face_check = ToggleSwitch("启用人脸检测（睁眼+肤色）")
         self.face_check.setChecked(True)
         self.face_check.setToolTip("关闭后仅检测曝光、构图和模糊，大幅提升速度")
         self.face_check.toggled.connect(self._on_face_toggled)
-        col_left.addWidget(self.face_check)
+        face_row.addWidget(self.face_check, 1)
 
+        self.face_mode_combo = QComboBox()
+        self.face_mode_combo.addItem("最优人脸", FACE_MODE_BEST)
+        self.face_mode_combo.addItem("所有人脸 ✓", FACE_MODE_ALL)
+        self.face_mode_combo.setToolTip(
+            "最优人脸：生活照模式，取最佳人脸评估\n"
+            "所有人脸：合照模式，每张脸都必须通过，适用于会议/活动合照"
+        )
+        self.face_mode_combo.setFixedWidth(100)
+        self.face_mode_combo.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        face_row.addWidget(self.face_mode_combo, 0)
+        col_left.addLayout(face_row)
+
+        # 表情检测 + 笑容阈值（紧跟人脸检测）
+        expr_row = QHBoxLayout()
+        expr_row.setSpacing(6)
+        expr_row.setContentsMargins(2, 0, 0, 0)
+        self.expression_check = ToggleSwitch("检测笑容/表情")
+        self.expression_check.setToolTip("基于 MediaPipe Blendshapes，检测笑容和表情质量")
+        self.expression_check.toggled.connect(self._on_expression_toggled)
+        expr_row.addWidget(self.expression_check)
+
+        self.expression_slider = QSlider(Qt.Horizontal)
+        self.expression_slider.setMinimum(0)
+        self.expression_slider.setMaximum(12)
+        self.expression_slider.setValue(5)
+        self.expression_slider.setFixedWidth(70)
+        self.expression_slider.setToolTip("笑容阈值，越低越宽容")
+        expr_row.addWidget(self.expression_slider, 0)
+        self.expression_value_label = QLabel("0.25")
+        self.expression_value_label.setFixedWidth(24)
+        self.expression_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.expression_value_label.setStyleSheet("font-size: 10px; color: #888;")
+        expr_row.addWidget(self.expression_value_label, 0)
+        expr_row.addStretch()
+        self.expression_slider.setEnabled(False)
+        self.expression_slider.valueChanged.connect(
+            lambda v: self.expression_value_label.setText(f"{v * 0.05:.2f}"))
+        col_left.addLayout(expr_row)
+
+        # 构图水平
         self.level_check = ToggleSwitch("检测构图水平")
         self.level_check.setToolTip("检测照片是否倾斜，支持地平线和通用两种方法")
         self.level_check.toggled.connect(self._on_level_toggled)
@@ -179,6 +228,39 @@ class MainWindow(QMainWindow):
         self.level_angle_slider.valueChanged.connect(self._on_level_angle_changed)
         self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
 
+        # ── 中间列：红眼 ──
+
+        self.red_eye_check = ToggleSwitch("检测红眼")
+        self.red_eye_check.setToolTip("检测闪光灯造成的红眼现象（HSV 色彩分析）")
+        self.red_eye_check.toggled.connect(self._on_red_eye_toggled)
+        col_mid.addWidget(self.red_eye_check)
+
+        # 红眼阈值
+        re_inline = QHBoxLayout()
+        re_inline.setSpacing(4)
+        re_inline.setContentsMargins(2, 0, 0, 0)
+        self.red_eye_slider = QSlider(Qt.Horizontal)
+        self.red_eye_slider.setMinimum(2)
+        self.red_eye_slider.setMaximum(25)
+        self.red_eye_slider.setValue(8)
+        re_inline.addWidget(QLabel("阈值"), 0)
+        self.red_eye_slider.setFixedWidth(80)
+        re_inline.addWidget(self.red_eye_slider, 0)
+        self.red_eye_value_label = QLabel("0.08")
+        self.red_eye_value_label.setFixedWidth(28)
+        self.red_eye_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.red_eye_value_label.setStyleSheet("font-size: 10px; color: #888;")
+        re_inline.addWidget(self.red_eye_value_label, 0)
+        re_inline.addStretch()
+        self.red_eye_slider.setEnabled(False)
+        self.red_eye_slider.valueChanged.connect(
+            lambda v: self.red_eye_value_label.setText(f"{v * 0.01:.2f}"))
+        col_mid.addLayout(re_inline)
+
+        col_mid.addStretch()
+
+        # ── 右列：模糊 + 重复 ──
+
         self.blur_check = ToggleSwitch("检测模糊")
         self.blur_check.setToolTip("智能检测模糊照片（取最清晰区域判断，浅景深不误判）")
         self.blur_check.toggled.connect(self._on_blur_toggled)
@@ -187,6 +269,7 @@ class MainWindow(QMainWindow):
         # 模糊宽容度紧跟其后
         blur_inline = QHBoxLayout()
         blur_inline.setSpacing(4)
+        blur_inline.setContentsMargins(2, 0, 0, 0)
         self.blur_slider = QSlider(Qt.Horizontal)
         self.blur_slider.setMinimum(2)
         self.blur_slider.setMaximum(40)
@@ -208,7 +291,10 @@ class MainWindow(QMainWindow):
         self.duplicate_check.setToolTip("使用 dHash 感知哈希识别相似/重复照片")
         col_right.addWidget(self.duplicate_check)
 
+        col_right.addStretch()
+
         toggle_grid.addLayout(col_left, 1)
+        toggle_grid.addLayout(col_mid, 1)
         toggle_grid.addLayout(col_right, 1)
         detect_layout.addLayout(toggle_grid)
 
@@ -305,7 +391,8 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
-        # 双击打开原图
+        # 双击打开原图，单击预览
+        self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         split_row.addWidget(self.table, 1)
 
@@ -355,7 +442,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.summary_widget)
 
         # 水印
-        watermark = QLabel("by HZH  v4.0")
+        watermark = QLabel("by HZH  v5.0")
         watermark.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         watermark.setStyleSheet("color: rgba(180,180,180,80); font-size: 11px;")
         main_layout.addWidget(watermark)
@@ -435,9 +522,34 @@ class MainWindow(QMainWindow):
         self.over_slider.setValue(int(config.over_threshold / OVER_SLIDER_RANGE[2]))
         self.under_slider.setValue(int(config.under_threshold / UNDER_SLIDER_RANGE[2]))
 
-        self.face_check.setChecked(config.enable_face_detection)
-        self.ear_slider.setEnabled(config.enable_face_detection)
+        # 人脸检测
+        face_enabled = config.enable_face_detection
+        self.face_check.setChecked(face_enabled)
+        self.ear_slider.setEnabled(face_enabled)
+        self.face_mode_combo.setEnabled(face_enabled)
+        self.expression_check.setEnabled(face_enabled)
+        self.red_eye_check.setEnabled(face_enabled)
 
+        # 合照模式
+        fm_idx = self.face_mode_combo.findData(config.face_mode)
+        if fm_idx >= 0:
+            self.face_mode_combo.setCurrentIndex(fm_idx)
+
+        # 表情
+        expr_enabled = config.enable_expression
+        self.expression_check.setChecked(expr_enabled)
+        expr_slider_val = int(config.expression_smile_threshold / EXPRESSION_SMILE_SLIDER_RANGE[2])
+        self.expression_slider.setValue(max(0, min(12, expr_slider_val)))
+        self.expression_slider.setEnabled(expr_enabled)
+
+        # 红眼
+        re_enabled = config.enable_red_eye
+        self.red_eye_check.setChecked(re_enabled)
+        re_slider_val = int(config.red_eye_threshold / RED_EYE_SLIDER_RANGE[2])
+        self.red_eye_slider.setValue(max(2, min(25, re_slider_val)))
+        self.red_eye_slider.setEnabled(re_enabled)
+
+        # 构图水平
         self.level_check.setChecked(config.enable_level)
         saved_method = config.level_method
         idx = self.level_method_combo.findData(saved_method)
@@ -474,6 +586,11 @@ class MainWindow(QMainWindow):
         config.over_threshold = self.over_slider.value() * OVER_SLIDER_RANGE[2]
         config.under_threshold = self.under_slider.value() * UNDER_SLIDER_RANGE[2]
         config.enable_face_detection = self.face_check.isChecked()
+        config.face_mode = self.face_mode_combo.currentData() or FACE_MODE_BEST
+        config.enable_expression = self.expression_check.isChecked()
+        config.expression_smile_threshold = float(self.expression_slider.value() * 0.05)
+        config.enable_red_eye = self.red_eye_check.isChecked()
+        config.red_eye_threshold = float(self.red_eye_slider.value() * 0.01)
         config.enable_blur = self.blur_check.isChecked()
         config.blur_threshold = float(self.blur_slider.value() * 5)
         config.enable_level = self.level_check.isChecked()
@@ -536,6 +653,11 @@ class MainWindow(QMainWindow):
             over_threshold=self.over_slider.value() * step_over,
             under_threshold=self.under_slider.value() * step_under,
             enable_face_detection=self.face_check.isChecked(),
+            face_mode=self.face_mode_combo.currentData() or FACE_MODE_BEST,
+            enable_expression=self.expression_check.isChecked(),
+            expression_smile_threshold=float(self.expression_slider.value() * 0.05),
+            enable_red_eye=self.red_eye_check.isChecked(),
+            red_eye_threshold=float(self.red_eye_slider.value() * 0.01),
             enable_level=self.level_check.isChecked(),
             level_method=self.level_method_combo.currentData(),
             level_angle_tolerance=self.level_angle_slider.value() * 0.5,
@@ -548,12 +670,30 @@ class MainWindow(QMainWindow):
     # ── 检测选项辅助槽 ────────────────────────────────────────
 
     def _on_face_toggled(self, checked: bool):
-        """人脸检测开关切换时启用/禁用睁眼滑块。"""
+        """人脸检测开关切换时启用/禁用睁眼滑块、合照模式、表情开关。"""
         self.ear_slider.setEnabled(checked)
+        self.face_mode_combo.setEnabled(checked)
+        # 关闭人脸检测时，同时禁用表情和红眼（它们依赖人脸）
+        if not checked:
+            self.expression_check.setChecked(False)
+            self.expression_slider.setEnabled(False)
+            self.red_eye_check.setChecked(False)
+            self.red_eye_slider.setEnabled(False)
+        # 表情和红眼开关随人脸检测状态
+        self.expression_check.setEnabled(checked)
+        self.red_eye_check.setEnabled(checked)
 
     def _on_blur_toggled(self, checked: bool):
         """模糊检测开关切换时启用/禁用宽容度滑块。"""
         self.blur_slider.setEnabled(checked)
+
+    def _on_expression_toggled(self, checked: bool):
+        """表情检测开关切换时启用/禁用笑容阈值滑块。"""
+        self.expression_slider.setEnabled(checked)
+
+    def _on_red_eye_toggled(self, checked: bool):
+        """红眼检测开关切换时启用/禁用阈值滑块。"""
+        self.red_eye_slider.setEnabled(checked)
 
 
     def _toggle_advanced(self):
@@ -711,7 +851,8 @@ class MainWindow(QMainWindow):
                 self.table.item(row, 3).setText(f"重复 → {r.is_duplicate_of.name}")
                 dup_count += 1
 
-        self.preview_label.setVisible(False)
+        self.preview_label.setText("← 单击照片预览")
+        self.preview_label.setVisible(True)
         self._update_summary()
         if dup_count > 0:
             self.status_label.setText(f"分析完成  |  发现 {dup_count} 张重复照片")
@@ -748,6 +889,32 @@ class MainWindow(QMainWindow):
         self.summary_cards["fail"].setText(str(len(failed)))
         self.summary_cards["duplicate"].setText(str(len(dups)))
         self.summary_widget.setVisible(True)
+
+    def _on_cell_clicked(self, row, col):
+        """单击表格行 — 在右侧预览面板显示照片。"""
+        item = self.table.item(row, 0)
+        if item is None:
+            return
+        photo_path = item.data(Qt.UserRole)
+        if not photo_path:
+            return
+
+        from pathlib import Path
+        from PySide6.QtGui import QPixmap
+
+        pp = Path(photo_path)
+        if not pp.exists():
+            self.preview_label.setText("文件不存在")
+            return
+
+        pix = QPixmap(str(pp))
+        if pix.isNull():
+            self.preview_label.setText("无法预览")
+            return
+
+        self.preview_label.setPixmap(pix.scaled(
+            220, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.preview_label.setVisible(True)
 
     def _on_cell_double_clicked(self, row, col):
         """双击表格行 — 用系统默认程序打开原图。"""

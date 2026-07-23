@@ -7,6 +7,7 @@ from PySide6.QtCore import QSettings
 from .constants import (
     DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
     DEFAULT_BLUR_THRESHOLD, DEFAULT_DUPLICATE_HAMMING, DEFAULT_MAX_WORKERS,
+    DEFAULT_EXPRESSION_SMILE_THRESHOLD, DEFAULT_RED_EYE_THRESHOLD,
 )
 
 
@@ -122,6 +123,53 @@ class AppConfig:
     @prefer_raw.setter
     def prefer_raw(self, value: bool):
         self._settings.setValue("options/prefer_raw", value)
+
+    # ── 合照模式 ──────────────────────────────────────────
+
+    @property
+    def face_mode(self) -> str:
+        return self._settings.value("options/face_mode", "best")
+
+    @face_mode.setter
+    def face_mode(self, value: str):
+        self._settings.setValue("options/face_mode", value)
+
+    # ── 表情检测 ──────────────────────────────────────────
+
+    @property
+    def enable_expression(self) -> bool:
+        return bool(self._settings.value("options/expression", False))
+
+    @enable_expression.setter
+    def enable_expression(self, value: bool):
+        self._settings.setValue("options/expression", value)
+
+    @property
+    def expression_smile_threshold(self) -> float:
+        return float(self._settings.value("thresholds/expression_smile",
+                                          DEFAULT_EXPRESSION_SMILE_THRESHOLD))
+
+    @expression_smile_threshold.setter
+    def expression_smile_threshold(self, value: float):
+        self._settings.setValue("thresholds/expression_smile", value)
+
+    # ── 红眼检测 ──────────────────────────────────────────
+
+    @property
+    def enable_red_eye(self) -> bool:
+        return bool(self._settings.value("options/red_eye", False))
+
+    @enable_red_eye.setter
+    def enable_red_eye(self, value: bool):
+        self._settings.setValue("options/red_eye", value)
+
+    @property
+    def red_eye_threshold(self) -> float:
+        return float(self._settings.value("thresholds/red_eye", DEFAULT_RED_EYE_THRESHOLD))
+
+    @red_eye_threshold.setter
+    def red_eye_threshold(self, value: float):
+        self._settings.setValue("thresholds/red_eye", value)
 
     @property
     def enable_blur(self) -> bool:
