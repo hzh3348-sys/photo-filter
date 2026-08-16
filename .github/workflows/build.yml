@@ -28,6 +28,7 @@ jobs:
         with:
           name: Windows-便携版
           path: 照片筛选GUI_v5.1_by_HZH.zip
+          retention-days: 1   # Release 取走后即可清理，避免占满私有仓库存储配额
 
   # ── macOS ──
   build-macos:
@@ -60,6 +61,7 @@ jobs:
         with:
           name: macOS-app
           path: 照片筛选工具_macOS.zip
+          retention-days: 1
 
   # ── Release ──
   release:
