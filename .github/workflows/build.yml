@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: 安装依赖
-        run: pip install opencv-python mediapipe PySide6 pyinstaller pillow
+        run: pip install opencv-python mediapipe PySide6 pyinstaller rawpy pillow
       - name: 构建
         shell: cmd
         run: |
@@ -23,11 +23,11 @@ jobs:
       - name: 验证产物
         shell: cmd
         run: |
-          dir 照片筛选GUI_v3.0_by_HZH\ /s | findstr /i "exe themes"
+          dir 照片筛选GUI_v5.1_by_HZH\ /s | findstr /i "exe themes"
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-便携版
-          path: 照片筛选GUI_v3.0_by_HZH.zip
+          path: 照片筛选GUI_v5.1_by_HZH.zip
 
   # ── macOS ──
   build-macos:
@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: 安装依赖
-        run: pip install opencv-python mediapipe PySide6 pyinstaller pillow
+        run: pip install opencv-python mediapipe PySide6 pyinstaller rawpy pillow
       - name: 构建 .app
         run: |
           pyinstaller --onedir --windowed \
@@ -47,6 +47,7 @@ jobs:
             --add-data "resources/themes:resources/themes" \
             --collect-submodules mediapipe \
             --collect-binaries mediapipe \
+            --collect-binaries rawpy \
             --exclude-module scipy \
             --exclude-module PyQt5 \
             --exclude-module PyQt6 \
@@ -63,7 +64,7 @@ jobs:
   # ── Release ──
   release:
     needs: [build-windows, build-macos]
-    if: always()
+    if: needs.build-windows.result == 'success' && needs.build-macos.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -74,6 +75,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            Windows-便携版/照片筛选GUI_v3.0_by_HZH.zip
+            Windows-便携版/照片筛选GUI_v5.1_by_HZH.zip
             macOS-app/照片筛选工具_macOS.zip
           fail_on_unmatched_files: false

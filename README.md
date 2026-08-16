@@ -40,7 +40,7 @@ by HZH
 
 ### Windows 用户
 
-从 [Releases](../../releases) 下载最新 `照片筛选GUI_v5.0_by_HZH.zip`，解压后双击 exe 即用。
+从 [Releases](../../releases) 下载最新 `照片筛选GUI_v5.1_by_HZH.zip`，解压后双击 exe 即用。
 
 ### 源码运行（Windows / macOS / Linux）
 
