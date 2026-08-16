@@ -9,7 +9,7 @@ sys.path.insert(0, '.')
 import numpy as np
 import cv2
 import pytest
-from core.level import check_level, check_level_horizon
+from core.level import check_level, check_level_horizon, check_level_general
 
 
 def _make_line_image(size=(400, 400), x1=0, y1=100, x2=399, y2=100,
@@ -79,6 +79,49 @@ class TestLevelEntry:
     def test_general_method_returns_tuple(self):
         img = _make_line_image()
         ok, score = check_level(img, method="general", angle_tolerance=9.0)
+        assert isinstance(ok, bool)
+        assert 0.0 <= score <= 1.0
+
+
+class TestOpenCVShapeCompat:
+    """
+    v5.2 修复：OpenCV 不同版本的 HoughLinesP 返回结构不同——
+    旧版 (N,1,4)，新版 4.12+ 返回 (N,4)。两种都必须正常工作。
+    """
+
+    def _run_with_lines(self, lines, monkeypatch):
+        import cv2
+        monkeypatch.setattr(cv2, "HoughLinesP", lambda *a, **k: lines)
+        img = np.full((400, 400, 3), 200, dtype=np.uint8)
+        return check_level_horizon(img, angle_tolerance=5.0)
+
+    def test_old_shape_n_1_4(self, monkeypatch):
+        """旧版结构 (N,1,4)。"""
+        lines = np.array([[[0, 100, 399, 100]], [[0, 120, 399, 120]]], dtype=np.int32)
+        ok, score = self._run_with_lines(lines, monkeypatch)
+        assert ok is True  # 水平线应通过
+        assert score == 1.0
+
+    def test_new_shape_n_4(self, monkeypatch):
+        """新版结构 (N,4)——此前在此崩溃 cannot unpack non-iterable numpy.int32。"""
+        lines = np.array([[0, 100, 399, 100], [0, 120, 399, 120]], dtype=np.int32)
+        ok, score = self._run_with_lines(lines, monkeypatch)
+        assert ok is True
+        assert score == 1.0
+
+    def test_new_shape_tilted_detected(self, monkeypatch):
+        """新版结构下倾斜线仍能检出。"""
+        lines = np.array([[0, 80, 399, 130], [0, 90, 399, 140]], dtype=np.int32)
+        ok, _ = self._run_with_lines(lines, monkeypatch)
+        assert ok is False  # ~7° 倾斜，5° 容差内应失败
+
+    def test_general_method_new_shape(self, monkeypatch):
+        """通用方法同样兼容新版结构。"""
+        import cv2
+        lines = np.array([[0, 100, 399, 100], [0, 120, 399, 120]], dtype=np.int32)
+        monkeypatch.setattr(cv2, "HoughLinesP", lambda *a, **k: lines)
+        img = np.full((400, 400, 3), 200, dtype=np.uint8)
+        ok, score = check_level_general(img, angle_tolerance=9.0)
         assert isinstance(ok, bool)
         assert 0.0 <= score <= 1.0
 

@@ -218,6 +218,7 @@ def detect_single_photo(
         return result
 
     # 3. 构图水平检测（可选）
+    # v5.2: 异常隔离——单张照片构图检测出错只记提示，不影响曝光等其他检测
     if config.enable_level:
         try:
             result.level_ok, result.level_score = check_level(
@@ -226,16 +227,14 @@ def detect_single_photo(
                 angle_tolerance=config.level_angle_tolerance,
             )
         except Exception as e:
-            result.error = f"构图检测异常: {e}"
-            return result
+            result.note = f"构图检测异常: {e}"
 
     # 4. 模糊检测（可选）
     if config.enable_blur:
         try:
             result.blur_ok, result.blur_score = check_blur(img, config.blur_threshold)
         except Exception as e:
-            result.error = f"模糊检测异常: {e}"
-            return result
+            result.note = f"模糊检测异常: {e}"
 
     # 5. 人脸检测（可选开关）— 与曝光完全独立，互不依赖
     face_result = None

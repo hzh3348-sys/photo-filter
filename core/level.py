@@ -74,7 +74,10 @@ def check_level_horizon(
     # 计算每条线的角度，只保留接近水平的
     horizon_candidates = []
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        # v5.2 修复：兼容 OpenCV 不同版本——
+        # 旧版 HoughLinesP 返回 (N,1,4)，新版（4.12+）返回 (N,4)
+        pts = line.reshape(-1)
+        x1, y1, x2, y2 = int(pts[0]), int(pts[1]), int(pts[2]), int(pts[3])
         dx = x2 - x1
         dy = y2 - y1
         length = np.sqrt(dx*dx + dy*dy)
@@ -170,7 +173,9 @@ def check_level_general(
 
     deviations = []
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        # v5.2 修复：兼容 OpenCV 不同版本返回结构 (N,1,4) / (N,4)
+        pts = line.reshape(-1)
+        x1, y1, x2, y2 = int(pts[0]), int(pts[1]), int(pts[2]), int(pts[3])
         angle = np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi
         deviations.append(_normalize_angle_deviation(angle))
 
