@@ -1,6 +1,19 @@
 """v2.0 打包脚本 —— 生成便携版文件夹 + zip"""
 import subprocess, sys, os, shutil
 
+# ── 强制 UTF-8 输出（v5.1 修复）──
+# CI 的 cmd 控制台默认 cp1252，print 中文路径/提示会 UnicodeEncodeError 直接崩
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 IS_CI = os.environ.get("CI") == "true"
 
