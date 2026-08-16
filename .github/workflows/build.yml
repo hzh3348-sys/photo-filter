@@ -23,11 +23,11 @@ jobs:
       - name: 验证产物
         shell: cmd
         run: |
-          dir 照片筛选GUI_v5.1_by_HZH\ /s | findstr /i "exe themes"
+          dir 照片筛选GUI_v5.2_by_HZH\ /s | findstr /i "exe themes"
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-便携版
-          path: 照片筛选GUI_v5.1_by_HZH.zip
+          path: 照片筛选GUI_v5.2_by_HZH.zip
           retention-days: 1   # Release 取走后即可清理，避免占满私有仓库存储配额
 
   # ── macOS ──
@@ -77,6 +77,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            Windows-便携版/照片筛选GUI_v5.1_by_HZH.zip
+            Windows-便携版/照片筛选GUI_v5.2_by_HZH.zip
             macOS-app/照片筛选工具_macOS.zip
           fail_on_unmatched_files: false

@@ -40,7 +40,7 @@ themes_dir = os.path.join(os.getcwd(), "resources", "themes")
 cmd = [
     sys.executable, "-m", "PyInstaller",
     "--onedir", "--windowed",
-    "--name", "照片筛选GUI_v5.1_by_HZH",
+    "--name", "照片筛选GUI_v5.2_by_HZH",
     "--icon", os.path.join(os.getcwd(), "app_icon.ico"),
     "--add-data", f"{model_file};.",
     "--add-data", f"{themes_dir};resources/themes",
@@ -71,7 +71,7 @@ cmd = [
 ]
 
 print("=" * 50)
-print("  打包 v5.1 (--onedir 便携模式)")
+print("  打包 v5.2 (--onedir 便携模式)")
 print("=" * 50)
 print(f"  模型: {model_file}")
 print(f"  插件: {plugins_dir}")
@@ -90,9 +90,9 @@ if result.stderr:
 print(f"\n构建{'成功' if result.returncode == 0 else '失败'} (exit: {result.returncode})")
 
 if result.returncode == 0:
-    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v5.1_by_HZH")
-    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.1_by_HZH")
-    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.1_by_HZH.zip")
+    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v5.2_by_HZH")
+    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.2_by_HZH")
+    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.2_by_HZH.zip")
 
     # 清理旧版
     if os.path.exists(folder_dst): shutil.rmtree(folder_dst, ignore_errors=True)

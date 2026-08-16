@@ -225,11 +225,21 @@ class AppConfig:
 
     @property
     def theme(self) -> str:
-        return self._settings.value("ui/theme", "auto")  # 默认跟随系统
+        # v5.2: 默认深色（Harness 开发者工具风格），可在设置/顶栏切换
+        return self._settings.value("ui/theme", "dark")
 
     @theme.setter
     def theme(self, value: str):
         self._settings.setValue("ui/theme", value)
+
+    @property
+    def theme_migrated_v52(self) -> bool:
+        """v5.2 主题迁移标记（旧配置首次启动切深色，迁移后尊重用户选择）。"""
+        return _as_bool(self._settings.value("ui/theme_v52", False))
+
+    @theme_migrated_v52.setter
+    def theme_migrated_v52(self, value: bool):
+        self._settings.setValue("ui/theme_v52", value)
 
     @property
     def window_geometry(self) -> bytes:

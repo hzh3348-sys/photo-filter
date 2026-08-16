@@ -102,10 +102,18 @@ class ThemeManager:
             app.setStyleSheet(qss)
 
     def restore(self):
-        """启动时恢复保存的主题。"""
-        saved = self._config.theme
-        if saved in (THEME_AUTO, THEME_LIGHT, THEME_DARK):
-            self._current = saved
+        """启动时恢复保存的主题。
+        v5.2: 旧配置（浅色/跟随系统）首次启动切到深色（Harness 开发者工具风格），
+        迁移后写入标记，之后尊重用户选择。"""
+        cfg = AppConfig()
+        if not cfg.theme_migrated_v52:
+            self._current = THEME_DARK
+            cfg.theme = THEME_DARK
+            cfg.theme_migrated_v52 = True
         else:
-            self._current = THEME_AUTO
+            saved = cfg.theme
+            if saved in (THEME_AUTO, THEME_LIGHT, THEME_DARK):
+                self._current = saved
+            else:
+                self._current = THEME_AUTO
         self._apply_effective()

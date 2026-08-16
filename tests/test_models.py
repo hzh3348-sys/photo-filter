@@ -93,6 +93,13 @@ class TestFailReason:
         r = _photo(face_detected=False).fail_reason
         assert "无人脸" in r
 
+    def test_error_only_reason(self):
+        """v5.2 修复：检测异常时只显示错误，不再叠加"曝光异常"等默认字段。"""
+        p = _photo(error="异常: xxx", exposure_ok=False, eyes_open=False)
+        assert p.fail_reason == "异常: xxx"
+        assert "曝光异常" not in p.fail_reason
+        assert "闭眼" not in p.fail_reason
+
 
 class TestDetectionConfigDefaults:
     """DetectionConfig 默认值应与 constants 单一数据源一致（v5.1 修复）。"""

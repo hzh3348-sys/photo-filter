@@ -4,7 +4,7 @@
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QLabel, QSpinBox, QCheckBox, QGroupBox,
+    QPushButton, QLabel, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox,
     QDialogButtonBox, QTextBrowser, QComboBox,
 )
 from PySide6.QtCore import Qt
@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from utils.config import AppConfig
 from utils.constants import DEFAULT_MAX_WORKERS
 from gui.theme_manager import ThemeManager, THEME_LABELS, THEME_AUTO, THEME_LIGHT, THEME_DARK
+from gui.widgets.chevron_combo import ChevronComboBox
 
 
 class SettingsDialog(QDialog):
@@ -34,7 +35,7 @@ class SettingsDialog(QDialog):
         appearance_group = QGroupBox("外观")
         appearance_form = QFormLayout(appearance_group)
 
-        self.theme_combo = QComboBox()
+        self.theme_combo = ChevronComboBox()
         for key in [THEME_AUTO, THEME_LIGHT, THEME_DARK]:
             self.theme_combo.addItem(THEME_LABELS[key], key)
         appearance_form.addRow("主题:", self.theme_combo)
@@ -51,6 +52,73 @@ class SettingsDialog(QDialog):
         perf_form.addRow("并行线程数:", self.workers_spin)
 
         layout.addWidget(perf_group)
+
+        # ── 检测阈值（v5.2: 不常用选项从主界面移入设置）──
+        thresh_group = QGroupBox("检测阈值")
+        thresh_form = QFormLayout(thresh_group)
+
+        self.ear_spin = QDoubleSpinBox()
+        self.ear_spin.setRange(0.15, 0.25)
+        self.ear_spin.setSingleStep(0.01)
+        self.ear_spin.setDecimals(2)
+        self.ear_spin.setToolTip("睁眼灵敏度（EAR 阈值），越小越宽松")
+        thresh_form.addRow("睁眼灵敏度:", self.ear_spin)
+
+        self.over_spin = QDoubleSpinBox()
+        self.over_spin.setRange(0.20, 0.80)
+        self.over_spin.setSingleStep(0.05)
+        self.over_spin.setDecimals(2)
+        self.over_spin.setToolTip("过曝像素占比容忍度，越小越严格")
+        thresh_form.addRow("过曝容忍度:", self.over_spin)
+
+        self.under_spin = QDoubleSpinBox()
+        self.under_spin.setRange(0.20, 0.80)
+        self.under_spin.setSingleStep(0.05)
+        self.under_spin.setDecimals(2)
+        self.under_spin.setToolTip("欠曝像素占比容忍度，越小越严格")
+        thresh_form.addRow("欠曝容忍度:", self.under_spin)
+
+        self.smile_spin = QDoubleSpinBox()
+        self.smile_spin.setRange(0.0, 0.60)
+        self.smile_spin.setSingleStep(0.05)
+        self.smile_spin.setDecimals(2)
+        self.smile_spin.setToolTip("表情检测笑容阈值，越低越宽容")
+        thresh_form.addRow("笑容阈值:", self.smile_spin)
+
+        self.red_eye_spin = QDoubleSpinBox()
+        self.red_eye_spin.setRange(0.02, 0.25)
+        self.red_eye_spin.setSingleStep(0.01)
+        self.red_eye_spin.setDecimals(2)
+        self.red_eye_spin.setToolTip("红眼检测红色像素占比阈值，越小越严格")
+        thresh_form.addRow("红眼阈值:", self.red_eye_spin)
+
+        self.blur_spin = QDoubleSpinBox()
+        self.blur_spin.setRange(10, 200)
+        self.blur_spin.setSingleStep(5)
+        self.blur_spin.setDecimals(0)
+        self.blur_spin.setSuffix("")
+        self.blur_spin.setToolTip("模糊检测宽容度，越小越严格")
+        thresh_form.addRow("模糊宽容度:", self.blur_spin)
+
+        self.dup_spin = QSpinBox()
+        self.dup_spin.setRange(1, 15)
+        self.dup_spin.setToolTip("重复检测汉明距离阈值，越小越严格（只找几乎相同的）")
+        thresh_form.addRow("重复敏感度:", self.dup_spin)
+
+        self.level_method_combo = ChevronComboBox()
+        self.level_method_combo.addItem("地平线检测（推荐）", "horizon")
+        self.level_method_combo.addItem("通用检测", "general")
+        thresh_form.addRow("构图方法:", self.level_method_combo)
+
+        self.level_angle_spin = QDoubleSpinBox()
+        self.level_angle_spin.setRange(2.0, 20.0)
+        self.level_angle_spin.setSingleStep(0.5)
+        self.level_angle_spin.setDecimals(1)
+        self.level_angle_spin.setSuffix("°")
+        self.level_angle_spin.setToolTip("构图允许倾斜角度，越小越严格")
+        thresh_form.addRow("构图严格度:", self.level_angle_spin)
+
+        layout.addWidget(thresh_group)
 
         # ── 默认行为 ──
         behavior_group = QGroupBox("默认行为")
@@ -72,11 +140,18 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v5.1</b></p>
+            <p><b>照片自动筛选工具 v5.2</b></p>
             <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复 + 表情 + 红眼</p>
             <p>作者：<b>HZH</b> &nbsp;|&nbsp;
                <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
             <hr>
+
+            <p style="font-size:13px; font-weight:bold; color:#6366f1;">v5.2 界面重构</p>
+            <p style="font-size:12px; line-height:1.6;">
+            <span style="font-weight:bold; color:#6366f1;">+</span> <b>现代简洁界面</b> — 顶部栏 + 左侧控制面板 + 右侧结果区<br>
+            <span style="font-weight:bold; color:#6366f1;">+</span> <b>全新双主题</b> — 浅色/深色，一键切换，卡片圆角设计<br>
+            <span style="font-weight:bold; color:#6366f1;">+</span> <b>交互细节</b> — 检测项开关行布局、预览卡片、统计卡片<br>
+            </p>
 
             <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v5.1 优化修复</p>
             <p style="font-size:12px; line-height:1.6;">
@@ -136,6 +211,19 @@ class SettingsDialog(QDialog):
         self.copy_check.setChecked(self._config.copy_mode)
         self.raw_check.setChecked(self._config.prefer_raw)
 
+        # 检测阈值（v5.2）
+        self.ear_spin.setValue(self._config.ear_threshold)
+        self.over_spin.setValue(self._config.over_threshold)
+        self.under_spin.setValue(self._config.under_threshold)
+        self.smile_spin.setValue(self._config.expression_smile_threshold)
+        self.red_eye_spin.setValue(self._config.red_eye_threshold)
+        self.blur_spin.setValue(self._config.blur_threshold)
+        self.dup_spin.setValue(self._config.duplicate_hamming)
+        lidx = self.level_method_combo.findData(self._config.level_method)
+        if lidx >= 0:
+            self.level_method_combo.setCurrentIndex(lidx)
+        self.level_angle_spin.setValue(self._config.level_angle_tolerance)
+
         # 主题
         current_theme = self._config.theme
         idx = self.theme_combo.findData(current_theme)
@@ -148,18 +236,58 @@ class SettingsDialog(QDialog):
         self._config.copy_mode = self.copy_check.isChecked()
         self._config.prefer_raw = self.raw_check.isChecked()
 
+        # 检测阈值（v5.2）
+        self._config.ear_threshold = self.ear_spin.value()
+        self._config.over_threshold = self.over_spin.value()
+        self._config.under_threshold = self.under_spin.value()
+        self._config.expression_smile_threshold = self.smile_spin.value()
+        self._config.red_eye_threshold = self.red_eye_spin.value()
+        self._config.blur_threshold = self.blur_spin.value()
+        self._config.duplicate_hamming = self.dup_spin.value()
+        self._config.level_method = self.level_method_combo.currentData() or "horizon"
+        self._config.level_angle_tolerance = self.level_angle_spin.value()
+
         # 主题
         new_theme = self.theme_combo.currentData()
         if new_theme != self._config.theme:
             self._theme_mgr.apply_theme(new_theme)
+            # v5.2 修复：主题切换后刷新主窗口玻璃背景 + 图标颜色
+            parent = self.parent()
+            if parent is not None:
+                for method in ("_apply_glass_background", "_update_theme_icon"):
+                    fn = getattr(parent, method, None)
+                    if callable(fn):
+                        try:
+                            fn()
+                        except Exception:
+                            pass
 
         self.accept()
 
     def _reset_defaults(self):
         """恢复默认设置。"""
+        from utils.constants import (
+            DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
+            DEFAULT_EXPRESSION_SMILE_THRESHOLD, DEFAULT_RED_EYE_THRESHOLD,
+            DEFAULT_BLUR_THRESHOLD, DEFAULT_DUPLICATE_HAMMING, DEFAULT_HORIZON_ANGLE_TOLERANCE,
+        )
         self.workers_spin.setValue(DEFAULT_MAX_WORKERS)
         self.copy_check.setChecked(True)
         self.raw_check.setChecked(True)  # v5.1: 补上 RAW 优先的默认恢复
+
+        # 检测阈值恢复默认（v5.2）
+        self.ear_spin.setValue(DEFAULT_EAR_THRESHOLD)
+        self.over_spin.setValue(DEFAULT_OVEREXPOSURE_RATIO)
+        self.under_spin.setValue(DEFAULT_UNDEREXPOSURE_RATIO)
+        self.smile_spin.setValue(DEFAULT_EXPRESSION_SMILE_THRESHOLD)
+        self.red_eye_spin.setValue(DEFAULT_RED_EYE_THRESHOLD)
+        self.blur_spin.setValue(DEFAULT_BLUR_THRESHOLD)
+        self.dup_spin.setValue(DEFAULT_DUPLICATE_HAMMING)
+        lidx = self.level_method_combo.findData("horizon")
+        if lidx >= 0:
+            self.level_method_combo.setCurrentIndex(lidx)
+        self.level_angle_spin.setValue(DEFAULT_HORIZON_ANGLE_TOLERANCE)
+
         idx = self.theme_combo.findData(THEME_AUTO)
         if idx >= 0:
             self.theme_combo.setCurrentIndex(idx)

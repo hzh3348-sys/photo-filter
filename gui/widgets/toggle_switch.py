@@ -1,14 +1,15 @@
 """
-苹果风格拨动开关 (ToggleSwitch) — 紧凑 + 平滑动画。
+苹果风格拨动开关 (ToggleSwitch) — 现代圆润外观 + 平滑动画 (v5.2)。
+自绘渲染（不走 QSS），自动适配浅色/深色主题。
 """
 
 from PySide6.QtWidgets import QCheckBox
-from PySide6.QtCore import Qt, QRect, QPoint, Property, QVariantAnimation, QEasingCurve, QSize
-from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QRect, QRectF, QPoint, Property, QVariantAnimation, QEasingCurve, QSize
+from PySide6.QtGui import QPainter, QColor, QPen, QRadialGradient
 
 
 class ToggleSwitch(QCheckBox):
-    """iOS 风格拨动开关（紧凑 + 动画）。"""
+    """iOS 风格拨动开关（紧凑 + 动画 + 主题适配）。"""
 
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
@@ -17,8 +18,8 @@ class ToggleSwitch(QCheckBox):
         self.setFixedHeight(26)
         self._anim_value = 1.0 if self.isChecked() else 0.0
         self._anim = QVariantAnimation(self)
-        self._anim.setDuration(200)
-        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._anim.valueChanged.connect(self._on_anim)
         self._anim.finished.connect(self.update)
 
@@ -46,35 +47,61 @@ class ToggleSwitch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
+        # 主题检测（浅/深）
         dark = self.palette().window().color().value() < 100
 
-        # 文字
-        painter.setPen(QColor("#d0d4e0") if dark else QColor("#2c3e50"))
+        # 文字（颜色随主题；disabled 变灰）
+        if self.isEnabled():
+            text_color = QColor("#c3c8d6") if dark else QColor("#3a4155")
+        else:
+            text_color = QColor("#4d5466") if dark else QColor("#b4b9c9")
+        painter.setPen(text_color)
         text_rect = QRect(44, 0, self.width() - 48, self.height())
         painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self.text())
 
-        # 轨道
+        # 轨道状态
         checked = self.isChecked()
         running = self._anim.state() == QVariantAnimation.Running
         t = self._anim_value if running else (1.0 if checked else 0.0)
-        off_color = QColor("#555") if dark else QColor("#c8cdd3")
-        on_color = QColor("#5c6bc0")
+
+        # 颜色
+        if dark:
+            off_color = QColor("#333a48")
+            on_color = QColor("#818cf8")
+            off_border = QColor("#3a4150")
+        else:
+            off_color = QColor("#dfe2ec")
+            on_color = QColor("#6366f1")
+            off_border = QColor("#d0d4e0")
+
+        # 过渡色
         r = int(off_color.red() + (on_color.red() - off_color.red()) * t)
         g = int(off_color.green() + (on_color.green() - off_color.green()) * t)
         b = int(off_color.blue() + (on_color.blue() - off_color.blue()) * t)
         track_color = QColor(r, g, b)
 
-        track = QRect(0, 4, 40, 18)
+        # 轨道（更大圆角）
+        track = QRectF(0, 4, 40, 18)
         painter.setPen(Qt.NoPen)
         painter.setBrush(track_color)
         painter.drawRoundedRect(track, 9, 9)
 
-        # 手柄
-        handle_x = int(2 + t * 18)
-        handle = QRect(handle_x, 0, 22, 26)
+        # 手柄（白底 + 细描边 + 阴影感）
+        handle_d = 20.0
+        handle_x = 1.5 + t * (40.0 - handle_d)
+        handle_rect = QRectF(handle_x, 3.0, handle_d, handle_d)
+        painter.setPen(QPen(QColor("#00000018"), 1))
         painter.setBrush(QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#bbb") if not dark else QColor("#555"), 1))
-        painter.drawEllipse(handle)
+        painter.drawEllipse(handle_rect)
+
+        # 手柄内的高光点（微立体感）
+        hi = QRectF(handle_x + 4.5, 5.5, 6, 6)
+        grad = QRadialGradient(hi.center(), 4)
+        grad.setColorAt(0, QColor("#ffffff"))
+        grad.setColorAt(1, QColor("#f2f3f7"))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(grad)
+        painter.drawEllipse(hi)
 
     def hitButton(self, pos: QPoint):
         """仅开关轨道区域可点击，文字区域不触发。"""
@@ -82,3 +109,7 @@ class ToggleSwitch(QCheckBox):
 
     def sizeHint(self):
         return QSize(self._calc_width(), 26)
+
+
+# 保持 Property 导入兼容（某些引用场景）
+__all__ = ["ToggleSwitch"]

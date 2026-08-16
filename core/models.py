@@ -129,8 +129,14 @@ class PhotoResult:
         """人类可读的不合格原因。"""
         reasons = []
 
+        # v5.2: 有错误（检测未完成）时只显示错误本身，
+        # 不再叠加默认字段（如曝光 False 导致的"曝光异常"误显示）
         if self.error:
             reasons.append(self.error)
+            if self.is_duplicate_of:
+                reasons.append(f"重复({self.is_duplicate_of.name})")
+            return ", ".join(reasons)
+
         if self.is_duplicate_of:
             reasons.append(f"重复({self.is_duplicate_of.name})")
 

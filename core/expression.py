@@ -21,6 +21,17 @@ def _get_blendshape_score(categories, name: str) -> float:
     return 0.0
 
 
+def _as_categories(blendshapes) -> list:
+    """
+    兼容 MediaPipe 不同版本的 blendshape 结构（v5.2 修复）：
+    - 旧版：元素是 Classifications 对象（含 .categories 属性）
+    - 新版（0.10.35+）：face_blendshapes 是 List[List[Category]]，元素直接是 categories 列表
+    """
+    if hasattr(blendshapes, "categories"):
+        return blendshapes.categories
+    return blendshapes
+
+
 def check_expression_single(
     categories,
     smile_threshold: float = 0.25,
@@ -91,7 +102,8 @@ def check_expression_multi(
 
     参数:
         face_blendshapes_list: MediaPipe FaceLandmarkerResult.face_blendshapes 列表
-                               (每个元素是一个 Classifications，.categories 是 52 项 blendshape)
+                               每个元素可能是 Classifications（含 .categories）或
+                               直接是 categories 列表（v5.2 兼容两种版本）
         smile_threshold: 笑容阈值
         face_mode: "best" 取最优人脸 / "all" 所有人脸通过才算合格
 
@@ -104,8 +116,9 @@ def check_expression_multi(
     total = len(face_blendshapes_list)
     results = []
     for blendshapes in face_blendshapes_list:
+        categories = _as_categories(blendshapes)
         ok, score, detail = check_expression_single(
-            blendshapes.categories, smile_threshold)
+            categories, smile_threshold)
         results.append((ok, score, detail))
 
     if face_mode == "best":

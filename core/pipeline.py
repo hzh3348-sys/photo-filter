@@ -258,26 +258,33 @@ def detect_single_photo(
             _evaluate_best_face(result, face_result, img_face, config, lab)
 
         # ── v5.0: 表情检测（可选）──
+        # v5.2: 加异常隔离——单张照片的表情数据异常不再让整张照片检测失败
         if config.enable_expression and face_result.face_blendshapes:
-            exp_ok, exp_score, exp_detail, _, _ = check_expression_multi(
-                face_result.face_blendshapes,
-                smile_threshold=config.expression_smile_threshold,
-                face_mode=config.face_mode,
-            )
-            result.expression_ok = exp_ok
-            result.expression_score = exp_score
-            result.expression_detail = exp_detail
+            try:
+                exp_ok, exp_score, exp_detail, _, _ = check_expression_multi(
+                    face_result.face_blendshapes,
+                    smile_threshold=config.expression_smile_threshold,
+                    face_mode=config.face_mode,
+                )
+                result.expression_ok = exp_ok
+                result.expression_score = exp_score
+                result.expression_detail = exp_detail
+            except Exception as e:
+                result.note = f"表情检测异常: {e}"
 
         # ── v5.0: 红眼检测（可选）──
         if config.enable_red_eye:
-            re_ok, re_score, re_count = check_red_eye_multi(
-                img_face, face_result.face_landmarks,
-                threshold=config.red_eye_threshold,
-                face_mode=config.face_mode,
-            )
-            result.red_eye_ok = re_ok
-            result.red_eye_score = re_score
-            result.red_eye_count = re_count
+            try:
+                re_ok, re_score, re_count = check_red_eye_multi(
+                    img_face, face_result.face_landmarks,
+                    threshold=config.red_eye_threshold,
+                    face_mode=config.face_mode,
+                )
+                result.red_eye_ok = re_ok
+                result.red_eye_score = re_score
+                result.red_eye_count = re_count
+            except Exception as e:
+                result.note = f"红眼检测异常: {e}"
     elif config.enable_face_detection:
         # 人脸检测开启但未检测到人脸 —— 提示而非错误（照片仍可能通过）
         result.note = "未检测到人脸"

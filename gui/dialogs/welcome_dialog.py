@@ -38,9 +38,9 @@ class WelcomeDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("v5.1")
+        version = QLabel("v5.2")
         version.setAlignment(Qt.AlignCenter)
-        version.setStyleSheet("color: #8899aa; font-size: 12px;")
+        version.setStyleSheet("color: palette(placeholder-text); font-size: 12px;")
         layout.addWidget(version)
 
         layout.addSpacing(8)
@@ -56,10 +56,13 @@ class WelcomeDialog(QDialog):
         card_row.setSpacing(12)
         for emoji, title_text, desc in cards:
             card = QFrame()
+            # v5.2: 用 palette() 随主题自动适配（深色模式下不再发白）
             card.setStyleSheet("""
                 QFrame {
-                    background: #f0f2f8; border-radius: 10px;
-                    padding: 12px; border: 1px solid #e0e4ec;
+                    background: palette(base);
+                    border-radius: 12px;
+                    padding: 12px;
+                    border: 1px solid palette(mid);
                 }
             """)
             card_layout = QVBoxLayout(card)
@@ -73,12 +76,12 @@ class WelcomeDialog(QDialog):
 
             card_title = QLabel(title_text)
             card_title.setAlignment(Qt.AlignCenter)
-            card_title.setStyleSheet("font-weight: bold; font-size: 13px; border: none; background: transparent; color: #2c3e50;")
+            card_title.setStyleSheet("font-weight: bold; font-size: 13px; border: none; background: transparent; color: palette(text);")
             card_layout.addWidget(card_title)
 
             card_desc = QLabel(desc)
             card_desc.setAlignment(Qt.AlignCenter)
-            card_desc.setStyleSheet("font-size: 11px; color: #666; border: none; background: transparent;")
+            card_desc.setStyleSheet("font-size: 11px; border: none; background: transparent; color: palette(placeholder-text);")
             card_layout.addWidget(card_desc)
 
             card_row.addWidget(card)
@@ -89,7 +92,7 @@ class WelcomeDialog(QDialog):
         # 提示
         tip = QLabel("💡 拖拽文件夹可快速导入  |  ⚙ 右上角设置调整偏好  |  双击结果查看原图")
         tip.setAlignment(Qt.AlignCenter)
-        tip.setStyleSheet("color: #8899aa; font-size: 11px;")
+        tip.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
         layout.addWidget(tip)
 
         layout.addStretch()
@@ -97,7 +100,7 @@ class WelcomeDialog(QDialog):
         # 不再显示 + 按钮
         bottom_row = QHBoxLayout()
         self.skip_check = QCheckBox("下次不再显示")
-        self.skip_check.setStyleSheet("color: #8899aa; font-size: 11px;")
+        self.skip_check.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
         bottom_row.addWidget(self.skip_check)
         bottom_row.addStretch()
 

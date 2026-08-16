@@ -161,6 +161,33 @@ class TestExpressionMulti:
         assert score == 1.0
         assert total == 0
 
+    def test_new_mediapipe_list_structure(self):
+        """
+        v5.2 修复：新版 MediaPipe (0.10.35+) 的 face_blendshapes 是
+        List[List[Category]]——元素直接是 categories 列表，没有 .categories 属性。
+        """
+        faces = [
+            _make_categories(smile=0.6),   # 直接传 categories 列表（新版结构）
+            _make_categories(smile=0.05),
+        ]
+        ok, score, detail, fail_count, total = check_expression_multi(
+            faces, smile_threshold=0.25, face_mode="best")
+        assert ok is True
+        assert total == 2
+        assert fail_count == 1
+
+    def test_mixed_structures(self):
+        """新旧两种结构混用也能正常工作（v5.2 兼容）。"""
+        faces = [
+            _face(_make_categories(smile=0.5)),   # 旧版：Classifications 包装
+            _make_categories(smile=0.5),          # 新版：直接 list
+        ]
+        ok, score, _, fail_count, total = check_expression_multi(
+            faces, smile_threshold=0.25, face_mode="all")
+        assert ok is True
+        assert total == 2
+        assert fail_count == 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
