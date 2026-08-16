@@ -11,6 +11,21 @@ from .constants import (
 )
 
 
+def _as_bool(value) -> bool:
+    """
+    把 QSettings 读出的值安全转为 bool。
+    QSettings 在 ini 文件下会把 bool 存成 "true"/"false" 字符串，
+    直接 bool("false") 会得到 True（经典陷阱）。这里统一处理。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 class AppConfig:
     """应用配置单例，封装 QSettings 读写。"""
 
@@ -86,7 +101,7 @@ class AppConfig:
 
     @property
     def enable_face_detection(self) -> bool:
-        return bool(self._settings.value("options/face_detection", True))
+        return _as_bool(self._settings.value("options/face_detection", True))
 
     @enable_face_detection.setter
     def enable_face_detection(self, value: bool):
@@ -94,7 +109,7 @@ class AppConfig:
 
     @property
     def enable_level(self) -> bool:
-        return bool(self._settings.value("options/level", False))
+        return _as_bool(self._settings.value("options/level", False))
 
     @enable_level.setter
     def enable_level(self, value: bool):
@@ -118,7 +133,7 @@ class AppConfig:
 
     @property
     def prefer_raw(self) -> bool:
-        return bool(self._settings.value("options/prefer_raw", True))
+        return _as_bool(self._settings.value("options/prefer_raw", True))
 
     @prefer_raw.setter
     def prefer_raw(self, value: bool):
@@ -138,7 +153,7 @@ class AppConfig:
 
     @property
     def enable_expression(self) -> bool:
-        return bool(self._settings.value("options/expression", False))
+        return _as_bool(self._settings.value("options/expression", False))
 
     @enable_expression.setter
     def enable_expression(self, value: bool):
@@ -157,7 +172,7 @@ class AppConfig:
 
     @property
     def enable_red_eye(self) -> bool:
-        return bool(self._settings.value("options/red_eye", False))
+        return _as_bool(self._settings.value("options/red_eye", False))
 
     @enable_red_eye.setter
     def enable_red_eye(self, value: bool):
@@ -173,23 +188,15 @@ class AppConfig:
 
     @property
     def enable_blur(self) -> bool:
-        return bool(self._settings.value("options/blur", False))
+        return _as_bool(self._settings.value("options/blur", False))
 
     @enable_blur.setter
     def enable_blur(self, value: bool):
         self._settings.setValue("options/blur", value)
 
     @property
-    def blur_threshold(self) -> float:
-        return float(self._settings.value("thresholds/blur", 40.0))
-
-    @blur_threshold.setter
-    def blur_threshold(self, value: float):
-        self._settings.setValue("thresholds/blur", value)
-
-    @property
     def enable_duplicate(self) -> bool:
-        return bool(self._settings.value("options/duplicate", False))
+        return _as_bool(self._settings.value("options/duplicate", False))
 
     @enable_duplicate.setter
     def enable_duplicate(self, value: bool):
@@ -198,7 +205,7 @@ class AppConfig:
     @property
     def copy_mode(self) -> bool:
         # 默认复制
-        return bool(self._settings.value("options/copy_mode", True))
+        return _as_bool(self._settings.value("options/copy_mode", True))
 
     @copy_mode.setter
     def copy_mode(self, value: bool):
@@ -208,7 +215,7 @@ class AppConfig:
 
     @property
     def first_run(self) -> bool:
-        return bool(self._settings.value("ui/first_run", True))
+        return _as_bool(self._settings.value("ui/first_run", True))
 
     @first_run.setter
     def first_run(self, value: bool):

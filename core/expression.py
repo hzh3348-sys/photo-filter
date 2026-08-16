@@ -4,12 +4,12 @@ v5.0: 利用 FaceLandmarker 输出的 52 种 blendshape 系数，
 检测笑容程度、张嘴（说话/打哈欠）、表情自然度。
 """
 
-from typing import Optional
-
 from utils.constants import (
     BLENDSHAPE_SMILE_KEYS,
     BLENDSHAPE_MOUTH_OPEN_KEYS,
     BLENDSHAPE_NEUTRAL_KEY,
+    EXPRESSION_MOUTH_OPEN_LIMIT,
+    EXPRESSION_NEUTRAL_LIMIT,
 )
 
 
@@ -48,23 +48,28 @@ def check_expression_single(
     is_smiling = smile_avg >= smile_threshold
 
     # 张嘴判断：张嘴 > 0.3 视为可能在说话或打哈欠（过于夸张的表情）
-    is_mouth_open = mouth_open > 0.3
+    is_mouth_open = mouth_open > EXPRESSION_MOUTH_OPEN_LIMIT
 
     # 综合：笑容足够 + 不过度张嘴 = 合格
     # 如果表情过于中立（neutral > 0.9）且不笑 → 可能是板着脸，也不合格
-    is_too_neutral = neutral > 0.9 and smile_avg < smile_threshold
+    is_too_neutral = neutral > EXPRESSION_NEUTRAL_LIMIT and smile_avg < smile_threshold
 
     ok = is_smiling and not (is_mouth_open or is_too_neutral)
 
-    # 综合分数：笑容 - 惩罚项
-    score = smile_avg
+    # 综合分数：笑容在 [0, 2×threshold] 区间线性映射到 [0, 1]
+    # （threshold 处得 0.5，2×threshold 处满分），再减去张嘴/僵硬惩罚。
+    # 有区分度：笑得多得分高，而不是几乎恒为 1。
+    if smile_threshold > 0:
+        score = smile_avg / (smile_threshold * 2.0)
+    else:
+        score = smile_avg
     if is_mouth_open:
-        score -= 0.3 * mouth_open  # 张嘴惩罚
+        score -= 0.3 * mouth_open   # 张嘴惩罚
     if is_too_neutral:
-        score -= 0.2  # 太僵硬的惩罚
+        score -= 0.2                # 太僵硬的惩罚
 
     # 归一化到 [0, 1]
-    score = max(0.0, min(1.0, score + 0.5))  # 转为大致 0~1 范围
+    score = max(0.0, min(1.0, score))
 
     detail = {
         "smile": round(smile_avg, 3),

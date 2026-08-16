@@ -13,7 +13,12 @@ from PySide6.QtCore import QThread, Signal
 
 from core.models import PhotoResult, DetectionConfig
 from core.pipeline import MediaPipeManager, detect_single_photo
-from utils.constants import DEFAULT_MAX_WORKERS
+from utils.constants import DEFAULT_MAX_WORKERS, RAW_EXTENSIONS
+
+
+def _is_raw_path(path: Path) -> bool:
+    """判断是否为 RAW 格式文件。"""
+    return path.suffix.lower() in RAW_EXTENSIONS
 
 
 # 线程局部存储：每个工作线程拥有独立的 MediaPipeManager
@@ -25,6 +30,7 @@ class ProcessWorker(QThread):
     # progress signals
     progress = Signal(int, str, bool, str)        # completed_count, filename, passed, reason
     finished_signal = Signal(list)                 # results: list[PhotoResult]
+    cancelled_signal = Signal()                    # 用户主动停止（v5.1: 与完成区分开）
     error_signal = Signal(str)                     # error message
     status_update = Signal(str)                    # status bar / time estimation message
 
@@ -151,21 +157,55 @@ class ProcessWorker(QThread):
                     from core.duplicate import find_duplicates
                     self.status_update.emit("正在检测重复照片...")
                     duplicates = find_duplicates(self.photo_paths, self.config.duplicate_hamming)
+
+                    # ── prefer_raw：组内有 RAW 时保留 RAW，标记其他成员为重复 ──
+                    dup_set = {}   # dup_idx -> orig_idx（已跳过同名 RAW+JPG 对）
                     for dup_idx, orig_idx in duplicates.items():
-                        if dup_idx not in results_dict or orig_idx not in results_dict:
-                            continue
                         dup_path = self.photo_paths[dup_idx]
                         orig_path = self.photo_paths[orig_idx]
-
                         if dup_path.stem == orig_path.stem:
-                            continue
+                            continue  # 同名 RAW+JPG 是同一张照片的两个版本，不算重复
+                        dup_set[dup_idx] = orig_idx
 
-                        results_dict[dup_idx].is_duplicate_of = orig_path
-                        dup_count += 1
+                    if self.config.prefer_raw:
+                        # 按"代表(orig)"分组
+                        groups: dict[int, list[int]] = {}
+                        for dup_idx, orig_idx in dup_set.items():
+                            groups.setdefault(orig_idx, []).append(dup_idx)
+
+                        for orig_idx, dup_list in groups.items():
+                            orig_path = self.photo_paths[orig_idx]
+                            if _is_raw_path(orig_path):
+                                # 代表已是 RAW：其余全部标记为它的重复
+                                for d in dup_list:
+                                    results_dict[d].is_duplicate_of = orig_path
+                                dup_count += len(dup_list)
+                                continue
+
+                            # 代表不是 RAW：若组内有 RAW，改让 RAW 当保留者
+                            raw_members = [d for d in dup_list if _is_raw_path(self.photo_paths[d])]
+                            if raw_members:
+                                keep_idx = raw_members[0]
+                                keep_path = self.photo_paths[keep_idx]
+                                # 原代表降级为重复（指向 RAW）
+                                results_dict[orig_idx].is_duplicate_of = keep_path
+                                dup_count += 1
+                                for d in dup_list:
+                                    if d != keep_idx:
+                                        results_dict[d].is_duplicate_of = keep_path
+                                        dup_count += 1
+                            else:
+                                for d in dup_list:
+                                    results_dict[d].is_duplicate_of = orig_path
+                                dup_count += len(dup_list)
+                    else:
+                        for dup_idx, orig_idx in dup_set.items():
+                            results_dict[dup_idx].is_duplicate_of = self.photo_paths[orig_idx]
+                        dup_count = len(dup_set)
                 except Exception as dup_err:
                     self.status_update.emit(f"重复检测出错: {dup_err}")
 
-                # 推进进度条到最终步
+                # 推进进度条到最终步（v5.1: 用非空文件名，避免表格插入空行）
                 with self._progress_lock:
                     self._completed_count += 1
                 self.progress.emit(
@@ -184,9 +224,11 @@ class ProcessWorker(QThread):
                 # 重新排序
                 results.sort(key=lambda r: self.photo_paths.index(r.path) if r.path in self.photo_paths else 9999)
 
-            # 输出合格照片（串行，避免文件冲突）
+            # 合格照片集合
             passed = [r for r in results if r.all_pass and not r.error]
-            if self.output_dir and passed:
+
+            # 输出合格照片（串行，避免文件冲突）；取消时不输出
+            if self.output_dir and passed and not self._cancel_event.is_set():
                 self.status_update.emit(f"正在输出 {len(passed)} 张合格照片...")
                 out_dir = Path(self.output_dir)
                 out_dir.mkdir(parents=True, exist_ok=True)
@@ -196,13 +238,21 @@ class ProcessWorker(QThread):
                         dest = out_dir / r.path.name
                         if dest.exists():
                             dest = out_dir / f"{r.path.stem}_filtered{r.path.suffix}"
-                        transfer(str(r.path), str(dest))
+                        new_path = transfer(str(r.path), str(dest))
+                        if not self.copy_mode:
+                            # v5.1: 移动模式后更新路径，预览/定位指向新位置（原件已不在原目录）
+                            r.path = Path(new_path)
                     except Exception as e:
                         pass  # 单个文件输出失败不影响整体
 
             elapsed = time.time() - self._start_time
-            self.status_update.emit(f"分析完成，耗时 {elapsed:.0f} 秒")
-            self.finished_signal.emit(results)
+            if self._cancel_event.is_set():
+                # v5.1: 用户主动停止 → 发 cancelled，不再当作"完成"（避免弹评语等误判）
+                self.status_update.emit(f"已停止（耗时 {elapsed:.0f} 秒）")
+                self.cancelled_signal.emit()
+            else:
+                self.status_update.emit(f"分析完成，耗时 {elapsed:.0f} 秒")
+                self.finished_signal.emit(results)
 
         except Exception as e:
             import traceback
@@ -213,8 +263,10 @@ class ProcessWorker(QThread):
         self._cancel_event.set()
 
     def terminate_and_cleanup(self):
-        """强制终止并清理资源。"""
+        """强制终止并清理资源（仅在优雅停止超时后作为最后手段调用）。"""
         self._cancel_event.set()
         if self.isRunning():
-            self.terminate()
-            self.wait()
+            self.wait(2000)  # 先给优雅停止机会
+            if self.isRunning():
+                self.terminate()  # 最后手段（run() 内资源由 finally 兜底）
+                self.wait()

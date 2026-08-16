@@ -38,7 +38,7 @@ class WelcomeDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("v5.0")
+        version = QLabel("v5.1")
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: #8899aa; font-size: 12px;")
         layout.addWidget(version)
@@ -120,6 +120,7 @@ class WelcomeDialog(QDialog):
 
     def _on_start(self):
         """开始使用。"""
-        if self.skip_check.isChecked():
-            self._config.first_run = False
+        # v5.1 修复：无论是否勾选"下次不再显示"，点击开始即标记已引导，
+        # 避免欢迎窗每次启动都弹出
+        self._config.first_run = False
         self.accept()

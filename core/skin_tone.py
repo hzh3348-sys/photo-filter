@@ -55,13 +55,15 @@ def _build_face_region_mask(face_landmarks, img_shape):
     return mask
 
 
-def check_skin_tone(img: np.ndarray, face_landmarks) -> tuple:
+def check_skin_tone(img: np.ndarray, face_landmarks, lab: np.ndarray = None) -> tuple:
     """
     检测面部区域肤色是否自然。
 
     参数:
         img: BGR 格式图像
         face_landmarks: MediaPipe FaceLandmarkerResult.face_landmarks[0]
+        lab: 可选，预计算的 LAB 图像（BGR2LAB 结果）。
+             多人脸场景由调用方只转换一次并复用，避免每张人脸重复全图转换（性能优化）。
 
     返回:
         (是否合格: bool, 得分: float 0~1)
@@ -71,42 +73,51 @@ def check_skin_tone(img: np.ndarray, face_landmarks) -> tuple:
     if mask is None or cv2.countNonZero(mask) < 200:
         return False, 0.0
 
-    # ── 2. 区域采样 ──
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    # ── 2. 区域采样（复用调用方传入的 LAB，避免重复转换）──
+    if lab is None:
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     face_pixels = lab[mask > 0]
 
     if face_pixels.size < 200:
         return False, 0.0
 
-    # ── 3. 鲁棒统计 ──
+    # ── 3. 8 位 LAB → 标准 L*a*b* 单位 ──
+    # OpenCV 8 位 LAB：L8 = L*×255/100，A8 = a*+128，B8 = b*+128
+    # 常量 SKIN_* 使用标准 L*a*b* 单位（L* 0~100，a*/b* -128~127），
+    # 必须先转换再比较，否则 8 位 A(≈128) 远超 a* 上限(50) → 自然肤色全被误杀（v5.1 修复）
+    lab_f = face_pixels.astype(np.float32)
+    L_vals = lab_f[:, 0] * (100.0 / 255.0)
+    A_vals = lab_f[:, 1] - 128.0
+    B_vals = lab_f[:, 2] - 128.0
+
+    # ── 4. 鲁棒统计 ──
     # 用 10% 和 90% 百分位数去除极端值，然后取中位数
     # 极端值可能来自：高光反射、阴影、头发混入等
-    L_lo = float(np.percentile(face_pixels[:, 0], 10))
-    L_hi = float(np.percentile(face_pixels[:, 0], 90))
-    A_lo = float(np.percentile(face_pixels[:, 1], 10))
-    A_hi = float(np.percentile(face_pixels[:, 1], 90))
-    B_lo = float(np.percentile(face_pixels[:, 2], 10))
-    B_hi = float(np.percentile(face_pixels[:, 2], 90))
+    L_lo, L_hi = np.percentile(L_vals, [10, 90])
+    A_lo, A_hi = np.percentile(A_vals, [10, 90])
+    B_lo, B_hi = np.percentile(B_vals, [10, 90])
 
     # 用 [10%, 90%] 范围内的均值作为肤色表征
     in_range = (
-        (face_pixels[:, 0] >= L_lo) & (face_pixels[:, 0] <= L_hi) &
-        (face_pixels[:, 1] >= A_lo) & (face_pixels[:, 1] <= A_hi) &
-        (face_pixels[:, 2] >= B_lo) & (face_pixels[:, 2] <= B_hi)
+        (L_vals >= L_lo) & (L_vals <= L_hi) &
+        (A_vals >= A_lo) & (A_vals <= A_hi) &
+        (B_vals >= B_lo) & (B_vals <= B_hi)
     )
-    core_pixels = face_pixels[in_range]
+    core_pixels_l = L_vals[in_range]
+    core_pixels_a = A_vals[in_range]
+    core_pixels_b = B_vals[in_range]
 
-    if core_pixels.size < 100:
+    if core_pixels_l.size < 100:
         # 回退到中位数
-        L_m = float(np.percentile(face_pixels[:, 0], 50))
-        A_m = float(np.percentile(face_pixels[:, 1], 50))
-        B_m = float(np.percentile(face_pixels[:, 2], 50))
+        L_m = float(np.percentile(L_vals, 50))
+        A_m = float(np.percentile(A_vals, 50))
+        B_m = float(np.percentile(B_vals, 50))
     else:
-        L_m = float(np.mean(core_pixels[:, 0]))
-        A_m = float(np.mean(core_pixels[:, 1]))
-        B_m = float(np.mean(core_pixels[:, 2]))
+        L_m = float(np.mean(core_pixels_l))
+        A_m = float(np.mean(core_pixels_a))
+        B_m = float(np.mean(core_pixels_b))
 
-    # ── 4. 宽松判断 ──
+    # ── 5. 宽松判断 ──
     ok = (SKIN_L_MIN <= L_m <= SKIN_L_MAX and
           SKIN_A_MIN <= A_m <= SKIN_A_MAX and
           SKIN_B_MIN <= B_m <= SKIN_B_MAX)

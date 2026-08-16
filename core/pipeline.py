@@ -248,11 +248,14 @@ def detect_single_photo(
         result.face_count = len(face_result.face_landmarks)
         result.face_count_total = len(face_result.face_landmarks)
 
+        # ── LAB 全图只转换一次，多人脸复用（性能：避免每张脸重复全图转换）──
+        lab = cv2.cvtColor(img_face, cv2.COLOR_BGR2LAB)
+
         # ── 按 face_mode 策略评估睁眼 + 肤色 + 清晰度 ──
         if config.face_mode == "all":
-            _evaluate_all_faces(result, face_result, img_face, config)
+            _evaluate_all_faces(result, face_result, img_face, config, lab)
         else:
-            _evaluate_best_face(result, face_result, img_face, config)
+            _evaluate_best_face(result, face_result, img_face, config, lab)
 
         # ── v5.0: 表情检测（可选）──
         if config.enable_expression and face_result.face_blendshapes:
@@ -276,11 +279,11 @@ def detect_single_photo(
             result.red_eye_score = re_score
             result.red_eye_count = re_count
     elif config.enable_face_detection:
-        # 人脸检测开启但未检测到人脸
-        result.error = "未检测到人脸"
+        # 人脸检测开启但未检测到人脸 —— 提示而非错误（照片仍可能通过）
+        result.note = "未检测到人脸"
     else:
         # 人脸检测关闭 — 仅检测曝光等，人脸相关项默认通过
-        result.error = "人脸检测已关闭"
+        result.note = "人脸检测已关闭"
 
     # 释放临时图片
     del img_face, img
@@ -289,7 +292,7 @@ def detect_single_photo(
 
 
 def _evaluate_best_face(
-    result: PhotoResult, face_result, img_face, config: DetectionConfig,
+    result: PhotoResult, face_result, img_face, config: DetectionConfig, lab: np.ndarray,
 ):
     """
     最优人脸策略：在所有人脸中取评分最高的一张进行评估。
@@ -312,7 +315,7 @@ def _evaluate_best_face(
         except Exception:
             eyes_open, eye_score = True, 0.5
         try:
-            skin_ok, skin_score = check_skin_tone(img_face, landmarks)
+            skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
         except Exception:
             skin_ok, skin_score = True, 0.5
         total = eye_score + skin_score
@@ -360,7 +363,7 @@ def _evaluate_best_face(
 
 
 def _evaluate_all_faces(
-    result: PhotoResult, face_result, img_face, config: DetectionConfig,
+    result: PhotoResult, face_result, img_face, config: DetectionConfig, lab: np.ndarray,
 ):
     """
     所有人脸策略：每张人脸都必须通过睁眼 + 肤色检测。
@@ -382,7 +385,7 @@ def _evaluate_all_faces(
         except Exception:
             eyes_open, eye_score = True, 0.5
         try:
-            skin_ok, skin_score = check_skin_tone(img_face, landmarks)
+            skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
         except Exception:
             skin_ok, skin_score = True, 0.5
 

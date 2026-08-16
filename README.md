@@ -1,95 +1,91 @@
-# 照片自动筛选工具 v3.0
+# 照片自动筛选工具 v5.1
 
-自动筛选照片：曝光正确 + 肤色正常 + 睁眼 + 构图水平（可选）+ 模糊检测（可选）+ 重复检测（可选）
+自动筛选照片：曝光正确 + 肤色正常 + 睁眼 + 构图水平（可选）+ 模糊检测（可选）+ 重复检测（可选）+ 表情/笑容（可选）+ 红眼（可选）
 
 by HZH
 
-## 新功能 (v3.0)
+## 新功能 (v5.0)
 
-- **🏎️ 多线程并行处理**：大幅提升大批量照片处理速度
-- **🔍 模糊检测**：Laplacian 方差法，自动识别模糊照片
-- **👤 人脸清晰度评分**：检测人脸区域的锐度和对比度
-- **📋 重复照片检测**：dHash 感知哈希 + 汉明距离，找出相似/重复照片
-- **👥 合照多人脸优选**：多人脸时取最优人脸评估
-- **🌙 深色模式**：一键切换浅色/深色主题
-- **💾 设置持久化**：自动记住阈值、目录、窗口布局
-- **🖱️ 拖拽导入**：直接拖拽文件夹到窗口
-- **🖼️ 双击预览**：双击结果行用系统默认程序打开原图
-- **🧩 模块化架构**：core/gui/utils 分层设计，便于扩展
+- **👥 合照模式**：最优人脸 / 所有人脸 双模式切换，会议合照每张脸都需过关
+- **😄 笑容/表情检测**：MediaPipe 52 种 Blendshapes，检测笑容度、张嘴、表情僵硬
+- **👁️ 红眼检测**：HSV 瞳孔区域分析，识别闪光灯红眼，可调阈值
+- **🖱️ 单击预览**：结果列表单击右侧即时显示照片缩略图
+- **🔓 曝光与人脸解耦**：曝光检测完全独立于人脸，极简像素统计，只拦极端情况（默认 50%）
+- **🌏 肤色检测升级**：全脸区域采样替代逐点采样，抗关键点定位误差
+
+## 优化修复 (v5.1)
+
+- **🐛 修复肤色检测单位错配**：LAB 8 位值与 L\*a\*b\* 常量直接比较，导致自然肤色几乎全被判不合格 —— 现统一转为标准 L\*a\*b\* 单位，深/浅肤色均正常通过
+- **⚡ 性能优化**：肤色 LAB 全图只转换一次（多人脸复用）、重复检测并行读图 + 整数汉明距离（比字符串比较快一个数量级）、默认线程数 2→4
+- **🗂️ 重复检测完善**：`重复时优先保留 RAW` 设置真正生效（组内有 RAW 时保留 RAW 并标记 JPG）；新增"重复敏感度"滑块（1~15）；开关与阈值持久化
+- **🔧 红眼检测增强**：瞳孔聚焦 ROI（虹膜关键点定位）+ 连通域过滤，红眼皮/红眼影/零散噪点不再误报
+- **📐 地平线检测增强**：单条贯穿画面的倾斜地平线（海平面）也能检出（原需≥3条线成簇）
+- **😀 表情得分修正**：去掉 +0.5 魔法数，得分有区分度（笑得多分高），不再恒为满分
+- **🖥️ 界面改进**：大图/RAW 预览改后台线程解码（不再卡 UI）、RAW 预览不再静默失败、停止分析不再误弹"魏老师点评"、欢迎窗只在首次启动弹出、构图"通用检测"严格度滑块量程修正
+- **🧪 测试**：单元测试 29 → **99 个**（新增表情/红眼/肤色/构图/模型/配置/重复并行等覆盖）
 
 ## 功能
 
-- **曝光检测**：分析直方图，识别过曝/欠曝照片
-- **肤色检测**：MediaPipe 面部关键点采样，LAB 色彩空间判断肤色是否自然
+- **曝光检测**：灰度直方图极端像素占比（过曝/欠曝），默认各 50% 只拦全毁照片
+- **肤色检测**：MediaPipe 面部关键点凸包区域采样，L\*a\*b\* 色彩空间判断肤色是否自然
 - **睁眼检测**：Eye Aspect Ratio (EAR) 算法，识别闭眼照片
-- **构图水平检测**（可选）：Canny + 霍夫变换，智能识别倾斜照片（透视构图不误判）
-- **模糊检测**（可选）：Laplacian 方差法 + 分区域评估
-- **重复检测**（可选）：dHash 感知哈希，识别相似/重复照片
+- **构图水平检测**（可选）：地平线检测（推荐）+ 通用检测（备选），只拦真正倾斜的地平线
+- **模糊检测**（可选）：多区域 Laplacian 方差 + 最清晰区域判断法，浅景深不误判
+- **重复检测**（可选）：dHash 感知哈希 + 整数汉明距离，识别相似/重复照片；RAW 优先
+- **表情检测**（可选）：笑容度 / 张嘴 / 表情僵硬
+- **红眼检测**（可选）：HSV 瞳孔区域分析 + 连通域过滤
 - **人脸清晰度**：专注人脸区域的局部锐度评估
 
 ## 使用方式
 
 ### Windows 用户
 
-从 [Releases](../../releases) 下载 `照片筛选GUI_v2.0_by_HZH.zip`，解压后双击 exe 即用。
+从 [Releases](../../releases) 下载最新 `照片筛选GUI_v5.0_by_HZH.zip`，解压后双击 exe 即用。
 
-### macOS 用户
+### 源码运行（Windows / macOS / Linux）
 
 ```bash
-pip install opencv-python mediapipe PySide6
-python photo_filter_gui.py
+pip install opencv-python mediapipe PySide6 rawpy
+python main.py
 ```
 
-如需打包成 .app：
+macOS 如需打包成 .app：
 ```bash
-python build_mac.py
-```
-
-### Linux 用户
-
-```bash
-pip install opencv-python mediapipe PySide6
-python photo_filter_gui.py
+python macos/build_mac.py
 ```
 
 ## 项目结构
 
 ```
-├── main.py                    # v3.0 主入口
+├── main.py                    # 主入口（闪屏 + 首次欢迎引导）
 ├── photo_filter_gui.py        # 向后兼容入口（委托给 main.py）
-├── photo_filter.py            # 命令行版 v1.0（不再维护）
 ├── build_v2.py                # Windows 打包脚本
 ├── macos/build_mac.py         # macOS 打包脚本
 ├── core/                      # 检测算法层（零 Qt 依赖）
 │   ├── pipeline.py            #   检测编排器 + MediaPipe 管理
 │   ├── models.py              #   数据模型 (PhotoResult, DetectionConfig)
 │   ├── exposure.py            #   曝光检测
-│   ├── skin_tone.py           #   肤色检测
+│   ├── skin_tone.py           #   肤色检测（L*a*b* 标准单位）
 │   ├── eyes.py                #   睁眼检测 (EAR)
-│   ├── level.py               #   构图水平检测
-│   ├── blur.py                #   模糊检测 [NEW]
-│   ├── clarity.py             #   人脸清晰度 [NEW]
-│   └── duplicate.py           #   重复检测 (dHash) [NEW]
+│   ├── level.py               #   构图水平检测（地平线/通用）
+│   ├── blur.py                #   模糊检测
+│   ├── clarity.py             #   人脸清晰度
+│   ├── duplicate.py           #   重复检测 (dHash + 整数汉明距离)
+│   ├── expression.py          #   表情/笑容检测（Blendshapes）
+│   └── red_eye.py             #   红眼检测（瞳孔聚焦 + 连通域过滤）
 ├── gui/                       # 界面层
 │   ├── main_window.py         #   主窗口
-│   ├── worker.py              #   多线程处理
-│   ├── theme_manager.py       #   主题管理器 [NEW]
-│   ├── widgets/
-│   │   └── image_preview.py   #   缩略图预览 [NEW]
-│   └── dialogs/
-│       └── settings_dialog.py #   设置对话框 [NEW]
+│   ├── worker.py              #   多线程处理（含重复后处理 + RAW 优先）
+│   ├── preview_loader.py      #   异步缩略图加载 [v5.1]
+│   ├── theme_manager.py       #   主题管理器
+│   ├── widgets/               #   拨动开关等自定义控件
+│   └── dialogs/               #   设置 / 欢迎对话框
 ├── utils/                     # 工具层
-│   ├── constants.py           #   默认阈值常量
+│   ├── constants.py           #   默认阈值常量（单一数据源）
 │   ├── config.py              #   QSettings 配置持久化
-│   └── image_io.py            #   图片加载（Unicode 路径兼容）
-├── resources/themes/          # 主题 QSS [NEW]
-│   ├── light.qss
-│   └── dark.qss
-├── tests/                     # 单元测试 [NEW]
-│   ├── test_exposure.py
-│   ├── test_eyes.py
-│   ├── test_blur.py
-│   └── test_duplicate.py
+│   └── image_io.py            #   图片加载（Unicode 路径 + RAW 三层回退）
+├── resources/themes/          # 主题 QSS
+├── tests/                     # 99 个单元测试
 ├── app_icon.ico               # 程序图标
 ├── face_landmarker.task       # MediaPipe 人脸关键点模型
 └── 测试GUI.bat                 # 开发测试启动器 (Windows)
@@ -108,3 +104,9 @@ python -m pytest tests/ -v
 # Windows 打包
 python build_v2.py
 ```
+
+## 常见问题
+
+- **肤色检测太严/太松？** v5.1 起统一为标准 L\*a\*b\* 单位，只拦截纯蓝/纯绿/纯紫等极端色偏；正常深浅肤色都可通过。
+- **RAW 照片打不开？** 内置三层回退：rawpy 完整解码 → 内嵌 JPEG 预览 → 二进制提取最大 JPEG，兼容新相机。
+- **重复检测保留哪张？** 默认每组保留第一张；开启"重复时优先保留 RAW"后，组内有 RAW 会保留 RAW 并标记其余为重复。

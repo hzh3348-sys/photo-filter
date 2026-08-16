@@ -13,9 +13,9 @@ import cv2
 from .constants import MAX_IMAGE_DIM, RAW_EXTENSIONS
 
 
-def _is_raw(path: Path) -> bool:
-    """判断是否为 RAW 格式。"""
-    return path.suffix.lower() in RAW_EXTENSIONS
+def _is_raw(path) -> bool:
+    """判断是否为 RAW 格式（兼容 str 与 Path 入参）。"""
+    return Path(path).suffix.lower() in RAW_EXTENSIONS
 
 
 def _extract_jpeg_from_raw_bytes(data: bytes) -> Optional[np.ndarray]:

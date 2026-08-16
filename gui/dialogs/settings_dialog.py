@@ -72,13 +72,22 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v5.0</b></p>
+            <p><b>照片自动筛选工具 v5.1</b></p>
             <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复 + 表情 + 红眼</p>
             <p>作者：<b>HZH</b> &nbsp;|&nbsp;
                <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
             <hr>
 
-            <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v5.0 全新升级</p>
+            <p style="font-size:13px; font-weight:bold; color:#2e7d32;">v5.1 优化修复</p>
+            <p style="font-size:12px; line-height:1.6;">
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>修复肤色单位错配</b> — 自然肤色不再被误判<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>重复检测完善</b> — RAW 优先生效、敏感度可调、并行提速<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>红眼/地平线增强</b> — 瞳孔聚焦 + 连通域过滤、单线地平线检出<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>性能优化</b> — 肤色 LAB 单次转换、异步预览、默认 4 线程<br>
+            <span style="font-weight:bold; color:#2e7d32;">+</span> <b>界面修复</b> — 停止不再误弹评语、欢迎窗只弹一次、构图滑块量程修正<br>
+            </p>
+
+            <p style="font-size:13px; font-weight:bold; color:#3949ab;">v5.0 全新升级</p>
             <p style="font-size:12px; line-height:1.6;">
             <span style="font-weight:bold; color:#2e7d32;">+</span> <b>合照模式</b> — 最优人脸 / 所有人脸双模式，会议合照每张脸都需过关<br>
             <span style="font-weight:bold; color:#2e7d32;">+</span> <b>笑容/表情检测</b> — MediaPipe Blendshapes 52 种表情分析，筛选最佳笑容<br>
@@ -150,6 +159,7 @@ class SettingsDialog(QDialog):
         """恢复默认设置。"""
         self.workers_spin.setValue(DEFAULT_MAX_WORKERS)
         self.copy_check.setChecked(True)
+        self.raw_check.setChecked(True)  # v5.1: 补上 RAW 优先的默认恢复
         idx = self.theme_combo.findData(THEME_AUTO)
         if idx >= 0:
             self.theme_combo.setCurrentIndex(idx)

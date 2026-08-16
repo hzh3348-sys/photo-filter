@@ -94,8 +94,8 @@ def check_level_horizon(
             'y_center': (y1 + y2) / 2,
         })
 
-    if len(horizon_candidates) < HORIZON_MIN_CLUSTER_SIZE:
-        return True, 1.0  # 近水平长线不够 → 无明确地平线 → 通过
+    if not horizon_candidates:
+        return True, 1.0  # 没有近水平长线 → 无明确地平线 → 通过
 
     # ── 第四步：角度聚类找主导水平线组 ──
     angles = np.array([c['angle'] for c in horizon_candidates])
@@ -115,11 +115,9 @@ def check_level_horizon(
     cluster_angles = angles[close_mask]
     cluster_lengths = lengths[close_mask]
 
-    # 聚类规模校验
-    if len(cluster_angles) < HORIZON_MIN_CLUSTER_SIZE:
-        return True, 1.0  # 无法形成有效聚类 → 通过
-
     # 聚类总长度校验：地平线类线条总长应至少占图宽的60%
+    # （长度是本质信号——单条贯穿画面的地平线（如海平面）也应触发检测，
+    #   因此不再要求"至少3条线"，避免漏检清晰但单一的倾斜地平线）
     total_cluster_length = float(np.sum(cluster_lengths))
     if total_cluster_length < w * 0.6:
         return True, 1.0  # 聚类线条不够长 → 非明确地平线 → 通过

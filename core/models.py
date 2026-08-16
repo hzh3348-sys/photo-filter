@@ -6,6 +6,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from utils.constants import (
+    DEFAULT_EAR_THRESHOLD,
+    DEFAULT_OVEREXPOSURE_RATIO,
+    DEFAULT_UNDEREXPOSURE_RATIO,
+    DEFAULT_BLUR_THRESHOLD,
+    DEFAULT_CLARITY_THRESHOLD,
+    DEFAULT_DUPLICATE_HAMMING,
+    DEFAULT_EXPRESSION_SMILE_THRESHOLD,
+    DEFAULT_RED_EYE_THRESHOLD,
+)
+
 
 @dataclass
 class PhotoResult:
@@ -74,12 +85,15 @@ class PhotoResult:
     # 错误
     error: Optional[str] = None
 
+    # 提示（非错误）：如"未检测到人脸"、"人脸检测已关闭"——不影响通过判定，
+    # 也不会作为失败原因展示
+    note: Optional[str] = None
+
     @property
     def all_pass(self) -> bool:
         """综合判断是否通过所有启用的检测。"""
         if self.error and "异常" in self.error:
             return False
-
         # 重复照片直接不合格
         if self.is_duplicate_of:
             return False
@@ -161,13 +175,13 @@ class PhotoResult:
 
 @dataclass
 class DetectionConfig:
-    """运行时检测配置（从 GUI 传入）。"""
-    ear_threshold: float = 0.20
-    over_threshold: float = 0.05
-    under_threshold: float = 0.15
-    blur_threshold: float = 40.0
-    clarity_threshold: float = 0.5
-    duplicate_hamming: int = 5
+    """运行时检测配置（从 GUI 传入）。默认值统一来自 utils/constants.py（单一数据源）。"""
+    ear_threshold: float = DEFAULT_EAR_THRESHOLD            # 0.20
+    over_threshold: float = DEFAULT_OVEREXPOSURE_RATIO      # 0.50（v5.0 只拦极端过曝）
+    under_threshold: float = DEFAULT_UNDEREXPOSURE_RATIO    # 0.50（v5.0 只拦极端欠曝）
+    blur_threshold: float = DEFAULT_BLUR_THRESHOLD          # 40.0
+    clarity_threshold: float = DEFAULT_CLARITY_THRESHOLD    # 0.5
+    duplicate_hamming: int = DEFAULT_DUPLICATE_HAMMING      # 5
 
     # 人脸检测
     enable_face_detection: bool = True       # 启用人脸检测（睁眼+肤色），关闭则仅检曝光
@@ -177,7 +191,7 @@ class DetectionConfig:
 
     # 表情检测（笑容/自然度）
     enable_expression: bool = False
-    expression_smile_threshold: float = 0.3  # smile blendshape 阈值
+    expression_smile_threshold: float = DEFAULT_EXPRESSION_SMILE_THRESHOLD  # 0.25
 
     # 红眼检测
     enable_red_eye: bool = False

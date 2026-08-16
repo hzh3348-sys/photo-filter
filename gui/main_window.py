@@ -18,6 +18,7 @@ from core.models import DetectionConfig
 from gui.worker import ProcessWorker
 from gui.widgets.toggle_switch import ToggleSwitch
 from gui.theme_manager import ThemeManager
+from gui.preview_loader import PreviewManager
 from utils.constants import (
     DEFAULT_EAR_THRESHOLD, DEFAULT_OVEREXPOSURE_RATIO, DEFAULT_UNDEREXPOSURE_RATIO,
     DEFAULT_EXPRESSION_SMILE_THRESHOLD, DEFAULT_RED_EYE_THRESHOLD,
@@ -53,7 +54,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.0")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.1")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -65,12 +66,15 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v5.0")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v5.1")
         self.setMinimumSize(920, 720)
         self.resize(1020, 780)
         self.results_data = []
         self.worker = None
         self._app_config = AppConfig()
+        # 异步缩略图预览（v5.1: 大图/RAW 解码不进主线程）
+        self._preview_mgr = PreviewManager(self)
+        self._preview_path = ""   # 当前预览对应的路径（防过期覆盖）
 
         self._setup_ui()
         self._apply_style()
@@ -86,7 +90,7 @@ class MainWindow(QMainWindow):
 
         # 标题行 + 主题切换按钮
         title_row = QHBoxLayout()
-        title = QLabel("照片自动筛选工具 by HZH  v5.0")
+        title = QLabel("照片自动筛选工具 by HZH  v5.1")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -321,6 +325,31 @@ class MainWindow(QMainWindow):
             col2, "欠曝容忍度", config.under_threshold,
             UNDER_SLIDER_RANGE[0], UNDER_SLIDER_RANGE[1], UNDER_SLIDER_RANGE[2])
 
+        # 重复检测敏感度（v5.1 新增 UI：此前汉明阈值写死为 5，不可调）
+        dup_row = QHBoxLayout()
+        dup_row.setSpacing(4)
+        dup_label = QLabel("重复敏感度:")
+        dup_label.setStyleSheet("font-size: 11px; color: #555;")
+        dup_row.addWidget(dup_label)
+        self.duplicate_hamming_slider = QSlider(Qt.Horizontal)
+        self.duplicate_hamming_slider.setMinimum(1)
+        self.duplicate_hamming_slider.setMaximum(15)
+        self.duplicate_hamming_slider.setValue(int(config.duplicate_hamming))
+        self.duplicate_hamming_slider.setFixedWidth(120)
+        self.duplicate_hamming_slider.setToolTip(
+            "重复判定阈值（汉明距离），越小越严格（只找几乎相同的照片）；\n"
+            "越大越宽容（连取景略有不同的连拍也算重复）")
+        dup_row.addWidget(self.duplicate_hamming_slider, 0)
+        self.duplicate_hamming_label = QLabel(str(config.duplicate_hamming))
+        self.duplicate_hamming_label.setFixedWidth(36)
+        self.duplicate_hamming_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.duplicate_hamming_label.setStyleSheet("font-size: 11px;")
+        dup_row.addWidget(self.duplicate_hamming_label, 0)
+        dup_row.addStretch()
+        self.duplicate_hamming_slider.valueChanged.connect(
+            lambda v: self.duplicate_hamming_label.setText(str(v)))
+        col2.addLayout(dup_row)
+
         threshold_grid.addLayout(col1, 1)
         threshold_grid.addLayout(col2, 1)
         adv_layout.addLayout(threshold_grid)
@@ -535,15 +564,18 @@ class MainWindow(QMainWindow):
         if fm_idx >= 0:
             self.face_mode_combo.setCurrentIndex(fm_idx)
 
+        # 表情/红眼依赖人脸检测：人脸关闭时强制子项关闭（v5.1 修复恢复状态失真，
+        # 避免出现"开关显示 ON 但实际不生效"）
+        expr_enabled = config.enable_expression and face_enabled
+        re_enabled = config.enable_red_eye and face_enabled
+
         # 表情
-        expr_enabled = config.enable_expression
         self.expression_check.setChecked(expr_enabled)
         expr_slider_val = int(config.expression_smile_threshold / EXPRESSION_SMILE_SLIDER_RANGE[2])
         self.expression_slider.setValue(max(0, min(12, expr_slider_val)))
         self.expression_slider.setEnabled(expr_enabled)
 
         # 红眼
-        re_enabled = config.enable_red_eye
         self.red_eye_check.setChecked(re_enabled)
         re_slider_val = int(config.red_eye_threshold / RED_EYE_SLIDER_RANGE[2])
         self.red_eye_slider.setValue(max(2, min(25, re_slider_val)))
@@ -555,10 +587,14 @@ class MainWindow(QMainWindow):
         idx = self.level_method_combo.findData(saved_method)
         if idx >= 0:
             self.level_method_combo.setCurrentIndex(idx)
+        # 先按方法设置滑块量程，再恢复数值（v5.1 修复 general 方法量程错乱）
+        self._apply_level_slider_range(saved_method)
         saved_angle = config.level_angle_tolerance
-        slider_val = int(saved_angle / 0.5)
-        self.level_angle_slider.setValue(max(4, min(24, slider_val)))
-        self.level_angle_label.setText(f"{self.level_angle_slider.value() * 0.5:.1f}°")
+        slider_val = int(round(saved_angle / 0.5))
+        self.level_angle_slider.setValue(max(
+            self.level_angle_slider.minimum(),
+            min(self.level_angle_slider.maximum(), slider_val)))
+        self._update_level_angle_label()
         self.level_method_combo.setEnabled(config.enable_level)
         self.level_angle_slider.setEnabled(config.enable_level)
 
@@ -566,6 +602,13 @@ class MainWindow(QMainWindow):
         self.blur_check.setChecked(config.enable_blur)
         self.blur_slider.setValue(max(2, min(40, int(config.blur_threshold / 5))))
         self.blur_slider.setEnabled(config.enable_blur)
+
+        # 重复照片
+        self.duplicate_check.setChecked(config.enable_duplicate)
+        if hasattr(self, "duplicate_hamming_slider"):
+            self.duplicate_hamming_slider.setValue(
+                max(1, min(15, int(config.duplicate_hamming))))
+            self.duplicate_hamming_label.setText(str(self.duplicate_hamming_slider.value()))
 
         self.copy_check.setChecked(config.copy_mode)
 
@@ -593,6 +636,9 @@ class MainWindow(QMainWindow):
         config.red_eye_threshold = float(self.red_eye_slider.value() * 0.01)
         config.enable_blur = self.blur_check.isChecked()
         config.blur_threshold = float(self.blur_slider.value() * 5)
+        config.enable_duplicate = self.duplicate_check.isChecked()  # v5.1: 补持久化
+        if hasattr(self, "duplicate_hamming_slider"):
+            config.duplicate_hamming = self.duplicate_hamming_slider.value()  # v5.1: 敏感度持久化
         config.enable_level = self.level_check.isChecked()
         config.level_method = self.level_method_combo.currentData() or "horizon"
         config.level_angle_tolerance = self.level_angle_slider.value() * 0.5
@@ -613,6 +659,11 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self._stop_analysis()
+            # 等待工作线程退出（用户已确认退出，此处阻塞可接受）
+            if self.worker:
+                self.worker.wait(10000)
+                if self.worker.isRunning():
+                    self.worker.terminate_and_cleanup()
         self._save_settings()
         super().closeEvent(event)
 
@@ -665,6 +716,7 @@ class MainWindow(QMainWindow):
             prefer_raw=self._app_config.prefer_raw,
             enable_blur=self.blur_check.isChecked(),
             enable_duplicate=self.duplicate_check.isChecked(),
+            duplicate_hamming=self.duplicate_hamming_slider.value(),  # v5.1: 敏感度生效
         )
 
     # ── 检测选项辅助槽 ────────────────────────────────────────
@@ -709,24 +761,33 @@ class MainWindow(QMainWindow):
 
     def _on_level_angle_changed(self, value: int):
         """构图严格度滑块变化时更新标签。"""
-        angle = value * 0.5
-        self.level_angle_label.setText(f"{angle:.1f}°")
+        self._update_level_angle_label()
+
+    def _apply_level_slider_range(self, method: str):
+        """
+        按构图方法设置滑块量程。滑块值 ×0.5 = 角度（与保存/恢复一致）。
+        v5.1 修复：此前 general 方法显示 9.0° 实际用 4.5°（量程/默认值错位）。
+        """
+        if method == "general":
+            # 通用检测：4°~20°，步长 0.5°，默认 9°
+            self.level_angle_slider.setMinimum(8)    # 4°
+            self.level_angle_slider.setMaximum(40)   # 20°
+            self.level_angle_slider.setValue(18)     # 9°
+        else:
+            # 地平线检测：2°~12°，步长 0.5°，默认 5°
+            self.level_angle_slider.setMinimum(4)    # 2°
+            self.level_angle_slider.setMaximum(24)   # 12°
+            self.level_angle_slider.setValue(10)     # 5°
+
+    def _update_level_angle_label(self):
+        """刷新构图角度标签。"""
+        self.level_angle_label.setText(f"{self.level_angle_slider.value() * 0.5:.1f}°")
 
     def _on_level_method_changed(self, index: int):
         """构图方法切换时更新滑块范围和默认值。"""
-        method = self.level_method_combo.currentData()
-        if method == "general":
-            # 通用检测：4°~20°, 步长1°, 默认9°
-            self.level_angle_slider.setMinimum(4)
-            self.level_angle_slider.setMaximum(20)
-            self.level_angle_slider.setValue(9)
-            self.level_angle_label.setText("9.0°")
-        else:
-            # 地平线检测：2°~12°, 步长0.5°, 默认5°
-            self.level_angle_slider.setMinimum(4)
-            self.level_angle_slider.setMaximum(24)
-            self.level_angle_slider.setValue(10)
-            self.level_angle_label.setText("5.0°")
+        method = self.level_method_combo.currentData() or "horizon"
+        self._apply_level_slider_range(method)
+        self._update_level_angle_label()
 
     def _start_analysis(self):
         input_dir = self.input_edit.text().strip()
@@ -761,34 +822,47 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(True)
         self.status_label.setText("正在加载 AI 模型...")
 
+        # v5.1: 断开旧 worker 的信号，避免停止后再开始时的竞态（旧结果覆盖新表格）
+        if self.worker is not None:
+            try:
+                self.worker.progress.disconnect()
+                self.worker.finished_signal.disconnect()
+                self.worker.cancelled_signal.disconnect()
+                self.worker.error_signal.disconnect()
+                self.worker.status_update.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+
         self.worker = ProcessWorker(
             photo_paths, config,
             output_dir=output_dir,
             copy_mode=self.copy_check.isChecked(),
+            max_workers=self._app_config.max_workers,  # v5.1: 让"并行线程数"设置真正生效
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.finished_signal.connect(self._on_finished)
+        self.worker.cancelled_signal.connect(self._on_cancelled)
         self.worker.error_signal.connect(self._on_error)
         self.worker.status_update.connect(self.status_label.setText)
         self.worker.start()
 
     def _stop_analysis(self):
+        """请求停止分析（v5.1: 不阻塞主线程，由 cancelled_signal 收尾）。"""
         if self.worker and self.worker.isRunning():
             self.status_label.setText("正在停止...")
-            self.worker.stop()
-            # 给 worker 一点时间优雅停止
-            self.worker.wait(3000)
-            if self.worker.isRunning():
-                self.worker.terminate_and_cleanup()
-            self.status_label.setText("已停止")
-            self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
-            self._update_summary()
+            self.worker.stop()
+            # 不再同步 wait(3000) —— 优雅停止完成后由 _on_cancelled 恢复界面
 
     def _on_progress(self, index, filename, passed, reason):
         """处理进度更新。"""
         self.progress_bar.setValue(index)
-        self.status_label.setText(f"分析中: {filename}")
+        self.status_label.setText(f"分析中: {filename}" if filename else reason)
+
+        # v5.1: 重复检测完成等非照片事件不插入表格空行
+        if not filename:
+            return
+
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setRowHeight(row, 28)
@@ -814,25 +888,51 @@ class MainWindow(QMainWindow):
         self.table.setItem(row, 3, QTableWidgetItem(reason))
         self.table.scrollToBottom()
 
-        # 实时预览
+        # 实时预览（v5.1: 后台线程解码，RAW 走内嵌 JPEG 快路径，不卡 UI）
         if file_path:
-            from pathlib import Path
-            pp = Path(file_path)
-            if pp.exists():
-                from PySide6.QtGui import QPixmap
-                pix = QPixmap(str(pp))
-                if not pix.isNull():
-                    self.preview_label.setPixmap(pix.scaled(
-                        220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    self.preview_label.setVisible(True)
+            self._request_preview(file_path, 220)
+
+    def _request_preview(self, photo_path: str, size: int = 220):
+        """异步请求缩略图预览，防止过期请求覆盖当前预览。"""
+        from pathlib import Path
+        pp = Path(photo_path)
+        if not pp.exists():
+            return
+        self._preview_path = str(pp)
+        self._preview_mgr.request_preview(
+            str(pp), size,
+            on_loaded=lambda path, img: self._show_preview(path, img),
+            on_failed=lambda path: None,
+        )
+
+    def _show_preview(self, photo_path: str, img):
+        """显示预览图（主线程，来自后台加载）。"""
+        if photo_path != self._preview_path:
+            return  # 过期请求，丢弃
+        from PySide6.QtGui import QPixmap
+        pix = QPixmap.fromImage(img)
+        if not pix.isNull():
+            self.preview_label.setPixmap(pix.scaled(
+                220, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.preview_label.setVisible(True)
 
     def _on_finished(self, results):
-        """分析完成。"""
+        """分析完成（仅在未取消时触发）。"""
         self.results_data = results
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.status_label.setText("分析完成")
+
+        # v5.1: move（移动）模式后，表格行路径更新到新位置，预览不再"文件不存在"
+        path_by_name = {r.path.name: str(r.path) for r in results}
+        for row in range(self.table.rowCount()):
+            name_item = self.table.item(row, 1)
+            status_item = self.table.item(row, 0)
+            if name_item and status_item:
+                name = name_item.text()
+                if name in path_by_name:
+                    status_item.setData(Qt.UserRole, path_by_name[name])
 
         # 回刷表格：更新被标记为重复的行
         dup_count = 0
@@ -868,6 +968,14 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self, "魏老师点评", "哇！代表作！——魏老师")
 
+    def _on_cancelled(self):
+        """用户主动停止分析（v5.1: 与"完成"分开，不弹评语、不输出）。"""
+        self.progress_bar.setVisible(False)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.status_label.setText("已停止")
+        self._update_summary()
+
     def _on_error(self, error_msg):
         """处理错误。"""
         self.progress_bar.setVisible(False)
@@ -891,30 +999,14 @@ class MainWindow(QMainWindow):
         self.summary_widget.setVisible(True)
 
     def _on_cell_clicked(self, row, col):
-        """单击表格行 — 在右侧预览面板显示照片。"""
+        """单击表格行 — 在右侧预览面板显示照片（v5.1: 异步加载不卡 UI）。"""
         item = self.table.item(row, 0)
         if item is None:
             return
         photo_path = item.data(Qt.UserRole)
         if not photo_path:
             return
-
-        from pathlib import Path
-        from PySide6.QtGui import QPixmap
-
-        pp = Path(photo_path)
-        if not pp.exists():
-            self.preview_label.setText("文件不存在")
-            return
-
-        pix = QPixmap(str(pp))
-        if pix.isNull():
-            self.preview_label.setText("无法预览")
-            return
-
-        self.preview_label.setPixmap(pix.scaled(
-            220, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.preview_label.setVisible(True)
+        self._request_preview(photo_path, 240)
 
     def _on_cell_double_clicked(self, row, col):
         """双击表格行 — 用系统默认程序打开原图。"""

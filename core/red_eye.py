@@ -2,6 +2,11 @@
 红眼检测 — 基于 HSV 色彩空间的瞳孔红色像素分析。
 v5.0: 利用 MediaPipe 眼部关键点定位瞳孔区域，
 检测闪光灯造成的红眼现象。
+
+改进 (v5.1):
+- 瞳孔聚焦：以 MediaPipe 虹膜中心（468/473）为中心取小 ROI，
+  不再把整个眼睑+眼皮区域算进来（降低红眼皮/红眼影误报）。
+- 连通域过滤：红色像素必须形成 ≥3 像素的连通斑块，排除零散噪点。
 """
 
 import numpy as np
@@ -12,14 +17,18 @@ from utils.constants import (
     RED_EYE_HUE_MIN, RED_EYE_HUE_MAX,
     RED_EYE_HUE_MIN2, RED_EYE_HUE_MAX2,
     RED_EYE_SATURATION_MIN, RED_EYE_VALUE_MIN,
+    RED_EYE_MIN_BLOB_SIZE,
+    RED_EYE_PUPIL_W_RATIO, RED_EYE_PUPIL_H_RATIO,
+    LEFT_IRIS_CENTER_IDX, RIGHT_IRIS_CENTER_IDX,
 )
 
 
-def _get_eye_roi(img, landmarks, eye_indices):
+def _get_pupil_roi(img, landmarks, eye_indices, iris_center_idx):
     """
-    从图像中提取眼部区域（基于关键点外接矩形，向外扩展20%）。
+    提取瞳孔区域 ROI：以虹膜中心为中心的小矩形（宽=眼宽×0.6，高=眼高×0.8）。
+    虹膜中心不可用时退回眼部外接矩形中心。
 
-    返回: (eye_roi, eye_bbox) 或 (None, None)
+    返回: pupil_roi 或 None
     """
     h, w = img.shape[:2]
     pts = []
@@ -31,36 +40,42 @@ def _get_eye_roi(img, landmarks, eye_indices):
                 pts.append([x, y])
 
     if len(pts) < 6:
-        return None, None
+        return None
 
     pts = np.array(pts, dtype=np.int32)
-
-    # 计算外接矩形
     x_min, y_min = pts[:, 0].min(), pts[:, 1].min()
     x_max, y_max = pts[:, 0].max(), pts[:, 1].max()
     bw, bh = x_max - x_min, y_max - y_min
+    if bw < 4 or bh < 2:
+        return None
 
-    # 向内外各扩展20%（捕获虹膜周边红色像素）
-    pad_x = int(bw * 0.2)
-    pad_y = int(bh * 0.2)
-    x1 = max(0, x_min - pad_x)
-    y1 = max(0, y_min - pad_y)
-    x2 = min(w, x_max + pad_x)
-    y2 = min(h, y_max + pad_y)
+    # 虹膜中心（关键点 468/473）
+    if iris_center_idx < len(landmarks):
+        cx = int(landmarks[iris_center_idx].x * w)
+        cy = int(landmarks[iris_center_idx].y * h)
+    else:
+        cx, cy = (x_min + x_max) // 2, (y_min + y_max) // 2
+
+    # 瞳孔 ROI
+    pw = max(4, int(bw * RED_EYE_PUPIL_W_RATIO))
+    ph = max(3, int(bh * RED_EYE_PUPIL_H_RATIO))
+    x1 = max(0, cx - pw // 2)
+    y1 = max(0, cy - ph // 2)
+    x2 = min(w, x1 + pw)
+    y2 = min(h, y1 + ph)
 
     roi = img[y1:y2, x1:x2]
-    if roi.size == 0:
-        return None, None
-
-    return roi, (x1, y1, x2, y2)
+    return roi if roi.size > 0 else None
 
 
 def _count_red_pixels(eye_roi) -> float:
     """
-    计算眼部 ROI 中红色/橙色像素的占比。
+    计算瞳孔 ROI 中红色/橙色像素的占比（含连通域过滤）。
 
     HSV 中的红色分两段：0°~10° 和 170°~180°
-    同时要求一定饱和度和明度，排除纯黑瞳孔和灰白像素。
+    同时要求一定饱和度和明度，排除纯黑瞳孔和灰白像素；
+    红色像素必须形成 ≥MIN_BLOB_SIZE 的连通斑块，排除零散噪点
+    （眼影亮片、反光、压缩伪影等）。
     """
     if eye_roi is None or eye_roi.size == 0:
         return 0.0
@@ -79,9 +94,16 @@ def _count_red_pixels(eye_roi) -> float:
     sat_ok = (s >= RED_EYE_SATURATION_MIN)
     val_ok = (v >= RED_EYE_VALUE_MIN)
 
-    red_pixels = ((red1 | red2) & sat_ok & val_ok).sum()
+    red_mask = ((red1 | red2) & sat_ok & val_ok).astype(np.uint8) * 255
 
-    return float(red_pixels / total) if total > 0 else 0.0
+    # 连通域过滤：只统计面积 >= MIN_BLOB_SIZE 的红色斑块
+    num, _, stats, _ = cv2.connectedComponentsWithStats(red_mask, connectivity=8)
+    blob_pixels = 0
+    for i in range(1, num):
+        if stats[i, cv2.CC_STAT_AREA] >= RED_EYE_MIN_BLOB_SIZE:
+            blob_pixels += int(stats[i, cv2.CC_STAT_AREA])
+
+    return float(blob_pixels / total) if total > 0 else 0.0
 
 
 def check_red_eye_single(img, landmarks, threshold: float = 0.08) -> tuple[bool, float]:
@@ -96,9 +118,9 @@ def check_red_eye_single(img, landmarks, threshold: float = 0.08) -> tuple[bool,
     返回:
         (是否合格, 红眼分数 0=严重红眼 1=无红眼)
     """
-    # 检测左右眼
-    left_roi, _ = _get_eye_roi(img, landmarks, LEFT_EYE_IDX)
-    right_roi, _ = _get_eye_roi(img, landmarks, RIGHT_EYE_IDX)
+    # 检测左右眼（瞳孔聚焦 ROI）
+    left_roi = _get_pupil_roi(img, landmarks, LEFT_EYE_IDX, LEFT_IRIS_CENTER_IDX)
+    right_roi = _get_pupil_roi(img, landmarks, RIGHT_EYE_IDX, RIGHT_IRIS_CENTER_IDX)
 
     left_ratio = _count_red_pixels(left_roi)
     right_ratio = _count_red_pixels(right_roi)

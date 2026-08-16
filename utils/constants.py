@@ -11,12 +11,14 @@ DEFAULT_UNDEREXPOSURE_RATIO = 0.50  # 50%以上像素欠曝才拦
 OVEREXPOSURE_PIXEL_THRESHOLD = 250  # 过曝像素灰度值
 UNDEREXPOSURE_PIXEL_THRESHOLD = 15  # 欠曝像素灰度值
 
-# ── 肤色检测 (LAB 色彩空间) ───────────────────────────────
+# ── 肤色检测 (L*a*b* 色彩空间，标准单位：L* 0~100, a*/b* -128~127) ───────
 # v5.0: 极致放宽，只拦截明显不是肤色的情况（如纯蓝、纯绿、纯紫等极端色偏）
 # 配合区域采样算法，正常肤色几乎都能通过
-SKIN_L_MIN, SKIN_L_MAX = 10, 250    # 几乎不拦亮度（仅全黑/全白不可）
-SKIN_A_MIN, SKIN_A_MAX = -5, 50     # 绿-红轴，覆盖所有人类肤色
-SKIN_B_MIN, SKIN_B_MAX = -5, 60     # 蓝-黄轴，覆盖所有人类肤色
+# 注意：以下常量均为标准 L*a*b* 单位（非 OpenCV 8 位 LAB），
+#       core/skin_tone.py 会先把 8 位 LAB 转回标准单位再比较（v5.1 修复单位错配 bug）
+SKIN_L_MIN, SKIN_L_MAX = 10, 100     # 几乎不拦亮度（仅全黑/全白不可）
+SKIN_A_MIN, SKIN_A_MAX = -5, 50      # 绿-红轴，覆盖所有人类肤色
+SKIN_B_MIN, SKIN_B_MAX = -5, 60      # 蓝-黄轴，覆盖所有人类肤色
 
 # ── 睁眼检测 (EAR) ──────────────────────────────────────
 DEFAULT_EAR_THRESHOLD = 0.20
@@ -83,7 +85,7 @@ MIN_FACE_PRESENCE_CONFIDENCE = 0.15    # v3.5: 降低 (0.3→0.2→0.15)
 MIN_TRACKING_CONFIDENCE = 0.3          # v3.5: 降低 (0.5→0.3)
 
 # ── 性能 ──────────────────────────────────────────────────
-DEFAULT_MAX_WORKERS = 2             # 并行处理线程数
+DEFAULT_MAX_WORKERS = 4             # 并行处理线程数（v5.1: 2→4，多核机器提速明显；可在设置中调整 1~8）
 
 # ── 新增检测 (Phase 3) ──────────────────────────────────
 DEFAULT_BLUR_THRESHOLD = 40.0       # Laplacian 方差阈值（v3.0: 降低避免误判，默认使用加权ROI法）
@@ -100,6 +102,8 @@ FACE_MODES = {
 
 # ── 表情检测 (MediaPipe Blendshapes) ───────────────────
 DEFAULT_EXPRESSION_SMILE_THRESHOLD = 0.25   # smile blendshape 阈值（低于此值视为表情欠佳）
+EXPRESSION_MOUTH_OPEN_LIMIT = 0.30          # 张嘴阈值：高于此值视为说话/打哈欠（表情夸张）
+EXPRESSION_NEUTRAL_LIMIT = 0.90             # 中立度阈值：高于此值且不笑 → 表情僵硬
 BLENDSHAPE_SMILE_KEYS = [                   # 笑容相关 blendshape 名称
     "mouthSmileLeft",
     "mouthSmileRight",
@@ -127,6 +131,13 @@ RED_EYE_HUE_MIN2 = 170                      # 第二段红色范围
 RED_EYE_HUE_MAX2 = 180
 RED_EYE_SATURATION_MIN = 40                 # 最低饱和度（排除灰白像素）
 RED_EYE_VALUE_MIN = 40                      # 最低明度（排除纯黑瞳孔）
+RED_EYE_MIN_BLOB_SIZE = 3                   # 红色像素最小连通斑块（过滤零散噪点）
+# 瞳孔 ROI 比例：以虹膜中心为中心，宽=眼宽×0.6，高=眼高×0.8
+RED_EYE_PUPIL_W_RATIO = 0.6
+RED_EYE_PUPIL_H_RATIO = 0.8
+# MediaPipe 虹膜中心关键点索引（468=左虹膜中心, 473=右虹膜中心）
+LEFT_IRIS_CENTER_IDX = 468
+RIGHT_IRIS_CENTER_IDX = 473
 # 滑块范围
 RED_EYE_SLIDER_RANGE = (0.02, 0.25, 0.01)   # 红眼阈值滑块 (min, max, step)
 
