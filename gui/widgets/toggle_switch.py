@@ -17,11 +17,12 @@ class ToggleSwitch(QCheckBox):
         self.setMinimumWidth(self._calc_width())
         self.setFixedHeight(26)
         self._anim_value = 1.0 if self.isChecked() else 0.0
+        self._target = self._anim_value   # 当前目标位置（0/1）
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(180)
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._anim.valueChanged.connect(self._on_anim)
-        self._anim.finished.connect(self.update)
+        self._anim.finished.connect(self._on_anim_finished)
 
     def _calc_width(self):
         fm = self.fontMetrics()
@@ -35,12 +36,29 @@ class ToggleSwitch(QCheckBox):
         self._anim_value = float(val)
         self.update()
 
-    def nextCheckState(self):
-        target = 1.0 if not self.isChecked() else 0.0
+    def _on_anim_finished(self):
+        # 动画结束：把位置钉在目标值，避免中断后回跳
+        self._anim_value = self._target
+        self.update()
+
+    def _animate_to(self, target: float):
+        """从当前视觉位置平滑过渡到 target（0/1），中断后续接当前值。"""
+        self._target = target
         self._anim.stop()
         self._anim.setStartValue(self._anim_value)
         self._anim.setEndValue(target)
         self._anim.start()
+
+    def setChecked(self, checked):
+        """覆盖：代码路径的 setChecked 也走动画（修复动画丢失）。"""
+        if self.isChecked() == bool(checked):
+            return
+        self._animate_to(1.0 if checked else 0.0)
+        super().setChecked(checked)
+
+    def nextCheckState(self):
+        target = 1.0 if not self.isChecked() else 0.0
+        self._animate_to(target)
         super().nextCheckState()
 
     def paintEvent(self, event):
@@ -59,10 +77,9 @@ class ToggleSwitch(QCheckBox):
         text_rect = QRect(44, 0, self.width() - 48, self.height())
         painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self.text())
 
-        # 轨道状态
-        checked = self.isChecked()
+        # 轨道状态：动画中取插值，动画外取目标值（不再回跳/丢失动画）
         running = self._anim.state() == QVariantAnimation.Running
-        t = self._anim_value if running else (1.0 if checked else 0.0)
+        t = self._anim_value if running else self._target
 
         # 颜色
         if dark:

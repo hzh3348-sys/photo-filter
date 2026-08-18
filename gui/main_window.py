@@ -7,13 +7,18 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QSlider, QProgressBar,
+    QPushButton, QLabel, QLineEdit, QProgressBar,
     QTableWidget, QTableWidgetItem, QFileDialog, QGroupBox,
     QCheckBox, QComboBox, QFrame, QHeaderView, QMessageBox, QSplashScreen,
-    QSplitter, QGraphicsDropShadowEffect,
+    QSplitter,
 )
-from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen, QBrush, QImage
+from PySide6.QtCore import (
+    Qt, Signal, QSize, QEvent,
+    QPropertyAnimation, QVariantAnimation, QEasingCurve,
+)
+from PySide6.QtGui import (
+    QFont, QColor, QPixmap, QPainter, QPen, QBrush, QImage, QPainterPath,
+)
 
 from core.models import DetectionConfig
 from gui.worker import ProcessWorker
@@ -57,7 +62,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.2")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.3")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -69,7 +74,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v5.2")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v5.3")
         self.setMinimumSize(980, 720)
         self.resize(1080, 800)
         self.results_data = []
@@ -78,6 +83,13 @@ class MainWindow(QMainWindow):
         # 异步缩略图预览（v5.1: 大图/RAW 解码不进主线程）
         self._preview_mgr = PreviewManager(self)
         self._preview_path = ""   # 当前预览对应的路径（防过期覆盖）
+
+        # ── UI 动画状态（v5.3 精细度）──
+        self._sidebar_width = 320      # 侧边栏展开宽度（折叠动画目标值）
+        self._sidebar_anim = None
+        self._progress_anim = None
+        self._preview_last_size = 0    # 已显示预览的源图宽度（防低清迟到覆盖）
+        self._stat_anims = []          # 统计数字滚动动画引用（防 GC）
 
         self._setup_ui()
         self._apply_style()
@@ -111,7 +123,7 @@ class MainWindow(QMainWindow):
         title = QLabel("照片自动筛选工具")
         title.setObjectName("appTitle")
         hrow.addWidget(title)
-        ver = QLabel("v5.2")
+        ver = QLabel("v5.3")
         ver.setObjectName("appVersion")
         hrow.addWidget(ver)
         hrow.addStretch()
@@ -174,28 +186,21 @@ class MainWindow(QMainWindow):
         # 人脸检测 + 合照模式
         self.face_mode_combo = ChevronComboBox()
         self.face_mode_combo.addItem("最优人脸", FACE_MODE_BEST)
-        self.face_mode_combo.addItem("所有人脸 ✓", FACE_MODE_ALL)
+        self.face_mode_combo.addItem("所有人脸", FACE_MODE_ALL)
         self.face_mode_combo.setToolTip(
             "最优人脸：生活照模式，取最佳人脸评估\n所有人脸：合照模式，每张脸都必须通过")
         self.face_mode_combo.setMinimumWidth(96)
-        self.face_mode_combo.setStyleSheet("font-size: 11px;")
+        # v5.3: 自绘下拉框不吃 QSS 字体，改用真实字体
+        _combo_font = QFont()
+        _combo_font.setPixelSize(11)
+        self.face_mode_combo.setFont(_combo_font)
         self.face_check = ToggleSwitch()
         self.face_check.setToolTip("启用人脸检测（睁眼+肤色），关闭后仅检曝光")
         self.face_check.setChecked(True)
         self.face_check.toggled.connect(self._on_face_toggled)
         self._opt_row(dc, "人脸检测", self.face_check, extra=self.face_mode_combo)
 
-        # 表情/笑容
-        self.expression_check = ToggleSwitch()
-        self.expression_check.setToolTip("基于 MediaPipe Blendshapes，检测笑容和表情质量\n阈值可在 设置 中调整")
-        self.expression_check.toggled.connect(self._on_expression_toggled)
-        self._opt_row(dc, "表情/笑容", self.expression_check)
-
-        # 红眼检测
-        self.red_eye_check = ToggleSwitch()
-        self.red_eye_check.setToolTip("检测闪光灯造成的红眼现象\n阈值可在 设置 中调整")
-        self.red_eye_check.toggled.connect(self._on_red_eye_toggled)
-        self._opt_row(dc, "红眼检测", self.red_eye_check)
+        # v5.3: 表情/红眼/清晰度/睁眼/肤色等子项已收进「设置 → 人脸检测」独立开关
 
         # 构图水平
         self.level_check = ToggleSwitch()
@@ -206,7 +211,9 @@ class MainWindow(QMainWindow):
         self.level_method_combo.addItem("通用", "general")
         self.level_method_combo.setToolTip("地平线检测：只找长水平线判断倾斜 | 通用检测：分析所有线条角度一致性")
         self.level_method_combo.setMinimumWidth(80)
-        self.level_method_combo.setStyleSheet("font-size: 11px;")
+        _combo_font = QFont()
+        _combo_font.setPixelSize(11)
+        self.level_method_combo.setFont(_combo_font)
         self.level_method_combo.setEnabled(False)
         self.level_method_combo.currentIndexChanged.connect(self._on_level_method_changed)
         self._opt_row(dc, "构图水平", self.level_check, extra=self.level_method_combo)
@@ -283,7 +290,8 @@ class MainWindow(QMainWindow):
             card.setObjectName("statCard")
             card.setStyleSheet(
                 f"QFrame#statCard {{ background: {color}14; border: 1px solid {color}40;"
-                f" border-radius: 12px; }}")
+                f" border-radius: 12px; }}"
+                f"QFrame#statCard:hover {{ border-color: {color}80; }}")
             cl = QVBoxLayout(card)
             cl.setSpacing(2)
             cl.setContentsMargins(14, 10, 14, 10)
@@ -320,6 +328,16 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
+
+        # 空状态引导（表格无数据时显示）
+        self._empty_hint = QLabel(
+            "拖入照片文件夹，或点击左侧「浏览」选择目录\n分析结果将实时显示在这里",
+            self.table.viewport())
+        self._empty_hint.setObjectName("emptyHint")
+        self._empty_hint.setAlignment(Qt.AlignCenter)
+        self._empty_hint.setWordWrap(True)
+        self.table.viewport().installEventFilter(self)
+
         split_row.addWidget(self.table, 1)
 
         # 预览卡片
@@ -338,15 +356,51 @@ class MainWindow(QMainWindow):
         body.setSizes([372, 900])  # 初始左/右宽度
 
     def _toggle_sidebar(self):
-        """折叠/展开左侧控制面板（v5.2）。"""
+        """折叠/展开左侧控制面板（v5.3: 宽度平滑动画）。"""
         left = self._sidebar_widget
-        if left.isHidden():
-            left.show()
-            self.sidebar_btn.setToolTip("收起左侧面板")
-        else:
-            left.hide()
-            self.sidebar_btn.setToolTip("展开左侧面板")
+        try:
+            if self._sidebar_anim is None:
+                self._sidebar_anim = QPropertyAnimation(left, b"maximumWidth", self)
+                self._sidebar_anim.setDuration(170)
+                self._sidebar_anim.setEasingCurve(QEasingCurve.InOutCubic)
+                self._sidebar_anim.finished.connect(self._on_sidebar_anim_finished)
+            anim = self._sidebar_anim
+            anim.stop()
+
+            if left.isHidden() or left.width() <= 1:
+                # 展开：0 → 记忆宽度
+                left.show()
+                left.setMinimumWidth(0)
+                anim.setStartValue(0)
+                anim.setEndValue(self._sidebar_width)
+                anim.start()
+                self.sidebar_btn.setToolTip("收起左侧面板")
+            else:
+                # 折叠：当前宽度 → 0
+                self._sidebar_width = max(left.width(), 300)
+                left.setMinimumWidth(0)
+                anim.setStartValue(left.width())
+                anim.setEndValue(0)
+                anim.start()
+                self.sidebar_btn.setToolTip("展开左侧面板")
+        except Exception:
+            # 动画异常时回退为即时折叠，不阻塞交互
+            if left.isHidden():
+                left.show()
+                self.sidebar_btn.setToolTip("收起左侧面板")
+            else:
+                left.hide()
+                self.sidebar_btn.setToolTip("展开左侧面板")
         self._update_theme_icon()  # 刷新折叠箭头方向
+
+    def _on_sidebar_anim_finished(self):
+        """侧边栏动画结束：恢复约束与卡片阴影。"""
+        left = self._sidebar_widget
+        if left.width() <= 1:
+            left.hide()
+        left.setMinimumWidth(300)
+        left.setMaximumWidth(520)
+        self._update_theme_icon()
 
     # ── 玻璃背景 ──────────────────────────────────────────
 
@@ -415,35 +469,13 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "_bg_label"):
             self._apply_glass_background()
+        self._layout_empty_hint()
 
-    def _make_slider(self, parent_layout, name, default_val, min_v, max_v, step, hint):
-        """创建带标签的滑块控件。"""
-        row = QHBoxLayout()
-        label = QLabel(f"{name}:")
-        label.setMinimumWidth(80)
-        row.addWidget(label)
-
-        slider = QSlider(Qt.Horizontal)
-        slider.setMinimum(int(min_v / step))
-        slider.setMaximum(int(max_v / step))
-        slider.setValue(int(default_val / step))
-        row.addWidget(slider, 1)
-
-        value_label = QLabel(f"{default_val:.2f}")
-        value_label.setMinimumWidth(40)
-        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        row.addWidget(value_label)
-
-        hint_label = QLabel(hint)
-        hint_label.setStyleSheet("color: #999; font-size: 11px;")
-        hint_label.setMinimumWidth(160)
-        row.addWidget(hint_label)
-
-        slider.valueChanged.connect(
-            lambda v, vl=value_label, s=step: vl.setText(f"{v * s:.2f}"))
-        parent_layout.addLayout(row)
-        return slider
-
+    def eventFilter(self, obj, event):
+        """表格视口尺寸变化时跟随重排空状态提示。"""
+        if obj is self.table.viewport() and event.type() == QEvent.Resize:
+            self._layout_empty_hint()
+        return super().eventFilter(obj, event)
 
     def _apply_style(self):
         """应用 QSS 样式表 + 控件 objectName（v5.2 现代主题）。"""
@@ -457,12 +489,17 @@ class MainWindow(QMainWindow):
         self._update_theme_icon()
 
     def _toggle_theme(self):
-        """切换浅色/深色主题（v5.2 新增）。"""
+        """切换浅色/深色主题（v5.3: 直接切换，不引入透明度效果，避免界面模糊）。"""
         tm = ThemeManager()
         nxt = THEME_DARK if tm.effective_theme == THEME_LIGHT else THEME_LIGHT
         tm.apply_theme(nxt)
+        self.refresh_theme_appearance()
+
+    def refresh_theme_appearance(self):
+        """主题已切换后刷新界面外观（设置对话框等外部入口调用）。"""
         self._update_theme_icon()
-        self._apply_glass_background()  # 背景随主题重绘
+        self._apply_glass_background()
+        self._layout_empty_hint()
 
     def _update_theme_icon(self):
         """刷新主题/折叠/设置按钮图标（v5.2 矢量图标）。"""
@@ -481,15 +518,14 @@ class MainWindow(QMainWindow):
         self.settings_btn.setIconSize(QSize(16, 16))
 
     def _make_card(self, title: str):
-        """创建细边框面板卡片（Harness 风格：克制的轻微阴影），返回 (card, layout)。"""
+        """创建细边框面板卡片（Harness 风格：纯边框层次），返回 (card, layout)。
+
+        v5.3: 不再使用 QGraphicsDropShadowEffect——它投影的是整个卡片渲染结果，
+        会把卡片内按钮/开关的文字也描出一层暗影（"字完全是两层"），
+        且动画期间重绘昂贵导致侧边栏掉帧。细边框 + 背景色差已足够分层。
+        """
         card = QFrame()
         card.setObjectName("card")
-        # 轻微阴影（Harness 风格：边框为主，阴影辅助）
-        shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(10)
-        shadow.setOffset(0, 2)
-        shadow.setColor(QColor(0, 0, 0, 40))
-        card.setGraphicsEffect(shadow)
         v = QVBoxLayout(card)
         v.setContentsMargins(12, 10, 12, 10)
         v.setSpacing(8)
@@ -512,6 +548,95 @@ class MainWindow(QMainWindow):
         row.addWidget(toggle)
         layout.addLayout(row)
 
+    # ── UI 动画与细节辅助（v5.3）─────────────────────────────
+
+    def _animate_progress(self, target: int):
+        """进度条平滑推进（而非瞬跳）。"""
+        if self._progress_anim is None:
+            self._progress_anim = QPropertyAnimation(self.progress_bar, b"value", self)
+            self._progress_anim.setDuration(220)
+            self._progress_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._progress_anim.stop()
+        self._progress_anim.setStartValue(self.progress_bar.value())
+        self._progress_anim.setEndValue(target)
+        self._progress_anim.start()
+
+    def _set_status(self, text: str, state: str = "idle"):
+        """状态标签分级着色：idle 灰 / run 蓝 / ok 绿 / err 红。"""
+        self.status_label.setText(text)
+        self.status_label.setProperty("state", state)
+        st = self.status_label.style()
+        st.unpolish(self.status_label)
+        st.polish(self.status_label)
+
+    def _on_status_update(self, text: str):
+        """worker 状态消息 → 自动分级着色。"""
+        if "出错" in text or "异常" in text:
+            self._set_status(text, "err")
+        elif "完成" in text:
+            self._set_status(text, "ok")
+        elif "停止" in text or "已取消" in text:
+            self._set_status(text, "idle")
+        else:
+            self._set_status(text, "run")
+
+    def _animate_stat(self, label, target: int, duration: int = 500):
+        """汇总卡片数字从当前值滚动到目标值。"""
+        try:
+            start = int(label.text() or 0)
+        except ValueError:
+            start = 0
+        if start == target:
+            label.setText(str(target))
+            return
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setStartValue(start)
+        anim.setEndValue(target)
+        anim.valueChanged.connect(lambda v: label.setText(str(int(v))))
+        anim.finished.connect(lambda: (label.setText(str(target)), anim.deleteLater()))
+        self._stat_anims.append(anim)
+        anim.start()
+
+    def _clear_stat_anims(self):
+        """停止并清理上一次的统计滚动动画。"""
+        for a in self._stat_anims:
+            try:
+                a.stop()
+                a.deleteLater()
+            except Exception:
+                pass
+        self._stat_anims = []
+
+    def _rounded_pixmap(self, pix: QPixmap, radius: int = 10) -> QPixmap:
+        """把照片裁剪成圆角矩形（与预览卡片圆角对齐）。"""
+        if pix.isNull():
+            return pix
+        out = QPixmap(pix.size())
+        out.fill(Qt.transparent)
+        p = QPainter(out)
+        p.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, pix.width(), pix.height(), radius, radius)
+        p.setClipPath(path)
+        p.drawPixmap(0, 0, pix)
+        p.end()
+        return out
+
+    def _layout_empty_hint(self):
+        """空状态提示铺满表格视口。"""
+        if not hasattr(self, "_empty_hint"):
+            return
+        vp = self.table.viewport()
+        self._empty_hint.setGeometry(0, 0, vp.width(), vp.height())
+        self._empty_hint.setVisible(self.table.rowCount() == 0)
+
+    def _update_empty_hint(self):
+        """按当前行数刷新空状态提示显隐。"""
+        if hasattr(self, "_empty_hint"):
+            self._empty_hint.setVisible(self.table.rowCount() == 0)
+
     # ── 设置持久化 ──────────────────────────────────────────
 
     def _restore_settings(self):
@@ -524,27 +649,15 @@ class MainWindow(QMainWindow):
         if saved_output:
             self.output_edit.setText(saved_output)
 
-        # 人脸检测
+        # 人脸检测（子项开关在设置中管理）
         face_enabled = config.enable_face_detection
         self.face_check.setChecked(face_enabled)
         self.face_mode_combo.setEnabled(face_enabled)
-        self.expression_check.setEnabled(face_enabled)
-        self.red_eye_check.setEnabled(face_enabled)
 
         # 合照模式
         fm_idx = self.face_mode_combo.findData(config.face_mode)
         if fm_idx >= 0:
             self.face_mode_combo.setCurrentIndex(fm_idx)
-
-        # 表情/红眼依赖人脸检测：人脸关闭时强制子项关闭
-        expr_enabled = config.enable_expression and face_enabled
-        re_enabled = config.enable_red_eye and face_enabled
-
-        # 表情
-        self.expression_check.setChecked(expr_enabled)
-
-        # 红眼
-        self.red_eye_check.setChecked(re_enabled)
 
         # 构图水平（方法下拉 + 开关）
         self.level_check.setChecked(config.enable_level)
@@ -577,8 +690,7 @@ class MainWindow(QMainWindow):
         config.output_dir = self.output_edit.text().strip()
         config.enable_face_detection = self.face_check.isChecked()
         config.face_mode = self.face_mode_combo.currentData() or FACE_MODE_BEST
-        config.enable_expression = self.expression_check.isChecked()
-        config.enable_red_eye = self.red_eye_check.isChecked()
+        # v5.3: 人脸子项开关由设置对话框管理（enable_expression 等）
         config.enable_blur = self.blur_check.isChecked()
         config.enable_duplicate = self.duplicate_check.isChecked()
         config.enable_level = self.level_check.isChecked()
@@ -644,9 +756,13 @@ class MainWindow(QMainWindow):
             under_threshold=config.under_threshold,
             enable_face_detection=self.face_check.isChecked(),
             face_mode=self.face_mode_combo.currentData() or FACE_MODE_BEST,
-            enable_expression=self.expression_check.isChecked(),
+            enable_eyes=config.enable_eyes,
+            enable_skin=config.enable_skin,
+            enable_clarity=config.enable_clarity,
+            enable_yunet=config.enable_yunet,
+            enable_expression=config.enable_expression,
             expression_smile_threshold=config.expression_smile_threshold,
-            enable_red_eye=self.red_eye_check.isChecked(),
+            enable_red_eye=config.enable_red_eye,
             red_eye_threshold=config.red_eye_threshold,
             enable_level=self.level_check.isChecked(),
             level_method=self.level_method_combo.currentData(),
@@ -661,24 +777,11 @@ class MainWindow(QMainWindow):
     # ── 检测选项辅助槽 ────────────────────────────────────────
 
     def _on_face_toggled(self, checked: bool):
-        """人脸检测开关切换：禁用/启用合照模式与表情、红眼子项。"""
+        """人脸检测开关切换：禁用/启用合照模式（子项开关在设置中）。"""
         self.face_mode_combo.setEnabled(checked)
-        if not checked:
-            self.expression_check.setChecked(False)
-            self.red_eye_check.setChecked(False)
-        self.expression_check.setEnabled(checked)
-        self.red_eye_check.setEnabled(checked)
 
     def _on_blur_toggled(self, checked: bool):
         """模糊检测开关（v5.2: 阈值在设置中，无需联动控件）。"""
-        pass
-
-    def _on_expression_toggled(self, checked: bool):
-        """表情检测开关（v5.2: 阈值在设置中，无需联动控件）。"""
-        pass
-
-    def _on_red_eye_toggled(self, checked: bool):
-        """红眼检测开关（v5.2: 阈值在设置中，无需联动控件）。"""
         pass
 
     def _on_level_toggled(self, checked: bool):
@@ -714,6 +817,7 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
         self.results_data = []
         self.summary_widget.setVisible(False)
+        self._update_empty_hint()
         self._path_map = {p.name: str(p) for p in photo_paths}
         self.progress_bar.setMaximum(len(photo_paths) + (1 if config.enable_duplicate else 0))
         self.progress_bar.setValue(0)
@@ -725,7 +829,7 @@ class MainWindow(QMainWindow):
         self._preview_path = ""
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.status_label.setText("正在加载 AI 模型...")
+        self._set_status("正在加载 AI 模型...", "run")
 
         # v5.1: 断开旧 worker 的信号，避免停止后再开始时的竞态（旧结果覆盖新表格）
         if self.worker is not None:
@@ -748,21 +852,21 @@ class MainWindow(QMainWindow):
         self.worker.finished_signal.connect(self._on_finished)
         self.worker.cancelled_signal.connect(self._on_cancelled)
         self.worker.error_signal.connect(self._on_error)
-        self.worker.status_update.connect(self.status_label.setText)
+        self.worker.status_update.connect(self._on_status_update)
         self.worker.start()
 
     def _stop_analysis(self):
         """请求停止分析（v5.1: 不阻塞主线程，由 cancelled_signal 收尾）。"""
         if self.worker and self.worker.isRunning():
-            self.status_label.setText("正在停止...")
+            self._set_status("正在停止...", "run")
             self.stop_btn.setEnabled(False)
             self.worker.stop()
             # 不再同步 wait(3000) —— 优雅停止完成后由 _on_cancelled 恢复界面
 
     def _on_progress(self, index, filename, passed, reason):
-        """处理进度更新。"""
-        self.progress_bar.setValue(index)
-        self.status_label.setText(f"分析中: {filename}" if filename else reason)
+        """处理进度更新（v5.3: 进度平滑推进 + 状态分级）。"""
+        self._animate_progress(index)
+        self._set_status(f"分析中: {filename}" if filename else reason, "run")
 
         # v5.1: 重复检测完成等非照片事件不插入表格空行
         if not filename:
@@ -791,19 +895,34 @@ class MainWindow(QMainWindow):
         result_item.setFont(bf)
         self.table.setItem(row, 2, result_item)
         self.table.setItem(row, 3, QTableWidgetItem(reason))
+        # v5.3: 状态/结果单元格加低透明度底色（柔化 pill 效果）
+        tint = QColor(46, 125, 50, 24) if passed else QColor(229, 57, 53, 24)
+        status_item.setBackground(tint)
+        result_item.setBackground(tint)
         self.table.scrollToBottom()
+        self._update_empty_hint()
 
         # 实时预览（v5.1: 后台线程解码，RAW 走内嵌 JPEG 快路径，不卡 UI）
         if file_path:
             self._request_preview(file_path, 220)
 
     def _request_preview(self, photo_path: str, size: int = 220):
-        """异步请求缩略图预览，防止过期请求覆盖当前预览。"""
+        """异步请求缩略图预览。
+
+        v5.3: 两级加载——先请求 96px 低清（DCT 降采样解码，几乎即时），
+        再请求目标尺寸高清替换，保证"分析到哪张立即显示哪张"。
+        """
         from pathlib import Path
         pp = Path(photo_path)
         if not pp.exists():
             return
         self._preview_path = str(pp)
+        self._preview_last_size = 0
+        self._preview_mgr.request_preview(
+            str(pp), 96,
+            on_loaded=lambda path, img: self._show_preview(path, img),
+            on_failed=lambda path: None,
+        )
         self._preview_mgr.request_preview(
             str(pp), size,
             on_loaded=lambda path, img: self._show_preview(path, img),
@@ -814,12 +933,17 @@ class MainWindow(QMainWindow):
         """显示预览图（主线程，来自后台加载）。"""
         if photo_path != self._preview_path:
             return  # 过期请求，丢弃
+        # v5.3: 低清迟到回调不覆盖已显示的更高清图
+        if img.width() < self._preview_last_size:
+            return
         from PySide6.QtGui import QPixmap
         pix = QPixmap.fromImage(img)
         if not pix.isNull():
-            self.preview_label.setPixmap(pix.scaled(
-                220, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            # v5.3: 圆角遮罩与预览框 QSS(padding 6px / radius 10px) 对齐
+            scaled = pix.scaled(216, 288, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.preview_label.setPixmap(self._rounded_pixmap(scaled, radius=10))
             self.preview_label.setVisible(True)
+            self._preview_last_size = img.width()
 
     def _on_finished(self, results):
         """分析完成（仅在未取消时触发）。"""
@@ -827,7 +951,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.status_label.setText("分析完成")
+        self._set_status("分析完成", "ok")
 
         # v5.1: move（移动）模式后，表格行路径更新到新位置，预览不再"文件不存在"
         path_by_name = {r.path.name: str(r.path) for r in results}
@@ -849,10 +973,13 @@ class MainWindow(QMainWindow):
         for r in results:
             if r.is_duplicate_of and str(r.path) in path_to_row:
                 row = path_to_row[str(r.path)]
+                dup_tint = QColor(230, 81, 0, 26)
                 self.table.item(row, 0).setText("●")
                 self.table.item(row, 0).setForeground(QColor("#e65100"))
+                self.table.item(row, 0).setBackground(dup_tint)
                 self.table.item(row, 2).setText("重复")
                 self.table.item(row, 2).setForeground(QColor("#e65100"))
+                self.table.item(row, 2).setBackground(dup_tint)
                 self.table.item(row, 3).setText(f"重复 → {r.is_duplicate_of.name}")
                 dup_count += 1
 
@@ -861,9 +988,10 @@ class MainWindow(QMainWindow):
         if not self._preview_path:
             self.preview_label.setText("选择照片查看预览")
             self.preview_label.setVisible(True)
-        self._update_summary()
+        self._update_summary(animated=True)
+        self._update_empty_hint()
         if dup_count > 0:
-            self.status_label.setText(f"分析完成  |  发现 {dup_count} 张重复照片")
+            self._set_status(f"分析完成  |  发现 {dup_count} 张重复照片", "ok")
 
         # 彩蛋：根据合格率弹出魏老师评语（有人脸检测时触发更有意义）
         if results and any(r.face_detected for r in results):
@@ -881,19 +1009,20 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.status_label.setText("已停止")
-        self._update_summary()
+        self._set_status("已停止", "idle")
+        self._update_summary(animated=True)
+        self._update_empty_hint()
 
     def _on_error(self, error_msg):
         """处理错误。"""
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.status_label.setText("发生错误")
+        self._set_status("发生错误", "err")
         QMessageBox.critical(self, "错误", f"处理过程中发生错误:\n\n{error_msg}")
 
-    def _update_summary(self):
-        """更新底部汇总卡片。"""
+    def _update_summary(self, animated: bool = False):
+        """更新底部汇总卡片（v5.3: 数字滚动 + 整体淡入）。"""
         if not self.results_data:
             self.summary_widget.setVisible(False)
             return
@@ -901,10 +1030,18 @@ class MainWindow(QMainWindow):
         failed = [r for r in self.results_data if not r.all_pass]
         dups = [r for r in self.results_data if r.is_duplicate_of]
 
-        self.summary_cards["pass"].setText(str(len(passed)))
-        self.summary_cards["fail"].setText(str(len(failed)))
-        self.summary_cards["duplicate"].setText(str(len(dups)))
-        self.summary_widget.setVisible(True)
+        if animated:
+            self._clear_stat_anims()
+            self._animate_stat(self.summary_cards["pass"], len(passed))
+            self._animate_stat(self.summary_cards["fail"], len(failed))
+            self._animate_stat(self.summary_cards["duplicate"], len(dups))
+            if not self.summary_widget.isVisible():
+                self.summary_widget.setVisible(True)
+        else:
+            self.summary_cards["pass"].setText(str(len(passed)))
+            self.summary_cards["fail"].setText(str(len(failed)))
+            self.summary_cards["duplicate"].setText(str(len(dups)))
+            self.summary_widget.setVisible(True)
 
     def _on_cell_clicked(self, row, col):
         """单击表格行 — 在右侧预览面板显示照片（v5.1: 异步加载不卡 UI）。"""

@@ -13,6 +13,7 @@ from PySide6.QtCore import QThread, Signal
 
 from core.models import PhotoResult, DetectionConfig
 from core.pipeline import MediaPipeManager, detect_single_photo
+from core.yunet import YuNetManager
 from utils.constants import DEFAULT_MAX_WORKERS, RAW_EXTENSIONS
 
 
@@ -84,7 +85,8 @@ class ProcessWorker(QThread):
         mp_manager = self._get_thread_mp_manager()
 
         try:
-            result = detect_single_photo(path, self.config, mp_manager)
+            result = detect_single_photo(
+                path, self.config, mp_manager, self._get_thread_yunet_manager())
         except Exception as e:
             result = PhotoResult(path=path, error=f"异常: {e}")
             result.level_enabled = self.config.enable_level
@@ -103,7 +105,13 @@ class ProcessWorker(QThread):
             _mp_thread_local.mp_manager = MediaPipeManager()
             # 预热加载模型
             _ = _mp_thread_local.mp_manager.model_bytes
+            _mp_thread_local.yunet_manager = YuNetManager()
         return _mp_thread_local.mp_manager
+
+    def _get_thread_yunet_manager(self):
+        """获取当前线程的 YuNetManager（模型缺失时 available=False，自动降级）。"""
+        self._get_thread_mp_manager()
+        return getattr(_mp_thread_local, 'yunet_manager', None)
 
     def run(self):
         try:
@@ -111,6 +119,9 @@ class ProcessWorker(QThread):
             # 主线程预热模型
             main_mp = MediaPipeManager()
             _ = main_mp.model_bytes
+            # v5.3: YuNet 双引擎（模型缺失时自动降级）
+            if self.config.enable_yunet and YuNetManager().available:
+                self.status_update.emit("已启用 MediaPipe + YuNet 双引擎人脸检测")
             self.status_update.emit("正在分析照片（并行模式）...")
             self._start_time = time.time()
 

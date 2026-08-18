@@ -5,13 +5,13 @@ metadata:
   type: project
 ---
 
-# 照片自动筛选工具 - 开发指南 (v4.0)
+# 照片自动筛选工具 - 开发指南 (v5.3)
 
 ## 项目信息
 
 - 作者：HZH
 - 仓库：https://github.com/hzh3348-sys/photo-filter
-- 版本：v4.0
+- 版本：v5.3
 
 ## 架构概览
 
@@ -83,6 +83,7 @@ resources/themes/{light, dark}.qss      ← theme_manager 加载
 - 汇总卡片：`gui/main_window.py` → `summary_cards` (绿/红/橙三色统计)
 - 彩蛋：`gui/main_window.py` → `_on_finished()` → 有人脸时合格率 <30% 或 >80% 弹魏老师点评
 - 主题文件：`resources/themes/light.qss`, `dark.qss`
+- 设置滚动区：`gui/dialogs/settings_dialog.py` → `_setup_ui()` 用 QScrollArea 包裹内容、按钮固定底部
 - 跟随系统主题：`gui/theme_manager.py` → `_detect_system_theme()` (Qt ColorScheme)
 - 模型路径：`core/pipeline.py` → `_get_model_path()` (frozen 模式兼容 PyInstaller)
 - 退出确认：`gui/main_window.py` → `closeEvent()` (分析中关闭弹确认框)
@@ -101,7 +102,7 @@ python -m pytest tests/ -v
 ```bash
 python build_v2.py
 ```
-产物在 `照片筛选GUI_v4.0_by_HZH/`。
+产物在 `照片筛选GUI_v5.3_by_HZH/`。
 
 ### 第四步：提交 + 发布
 ```bash

@@ -115,14 +115,14 @@ class MediaPipeManager:
         return MPImage, ImageFormat
 
 
-# ── 人脸检测（三轮，极致检出）───────────────────────────
+# ── 人脸检测（三轮 + YuNet 双引擎，极致检出）─────────────
 
-def _detect_faces(img, mp_manager):
+def _detect_faces(img, mp_manager, yunet_manager=None):
     """
-    三轮人脸检测，大幅提升小脸/侧脸/暗光检出率：
-    第1轮：原图检测
-    第2轮：放大到短边1200px
-    第3轮：放大到短边1800px + 中心裁剪
+    人脸检测：
+    1) MediaPipe 三轮（原图 → 1200px → 1800px + 中心裁剪），大幅提升小脸/侧脸/暗光检出率；
+    2) YuNet 双引擎补充（v5.3）：MediaPipe 漏检的人脸框 → 裁剪 → MediaPipe 关键点，
+       合并进结果。模型缺失时自动降级为纯 MediaPipe。
     """
     h, w = img.shape[:2]
     MPImage, ImageFormat = MediaPipeManager.get_mp_classes()
@@ -139,40 +139,107 @@ def _detect_faces(img, mp_manager):
         del rgb, mp_img
         return result
 
+    face_result = None
+
     # 第1轮：原图
     face_result = _try_detect(img)
-    if face_result and face_result.face_landmarks:
-        return face_result
 
-    # 第2轮：放大到短边1200px
-    if min(h, w) < 1200:
-        scale = 1200 / min(h, w)
-        up = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
-        face_result = _try_detect(up)
-        del up
-        if face_result and face_result.face_landmarks:
-            return face_result
+    if not (face_result and face_result.face_landmarks):
+        # 第2轮：放大到短边1200px
+        if min(h, w) < 1200:
+            scale = 1200 / min(h, w)
+            up = cv2.resize(img, (int(w * scale), int(h * scale)),
+                            interpolation=cv2.INTER_LANCZOS4)
+            face_result = _try_detect(up)
+            del up
 
-    # 第3轮：放大到短边1800px
-    if min(h, w) < 1800:
-        scale = 1800 / min(h, w)
-        up2 = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
-        face_result = _try_detect(up2)
-        del up2
-        if face_result and face_result.face_landmarks:
-            return face_result
-
-    # 第3轮备选：中心50%区域放大（人脸通常在中间）
-    cy, cx = h // 2, w // 2
-    crop = img[cy//2:cy+cy//2, cx//2:cx+cx//2]
-    if crop.size > 0 and min(crop.shape[:2]) > 100:
-        scale = 1200 / min(crop.shape[:2])
-        crop_up = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)),
+    if not (face_result and face_result.face_landmarks):
+        # 第3轮：放大到短边1800px
+        if min(h, w) < 1800:
+            scale = 1800 / min(h, w)
+            up2 = cv2.resize(img, (int(w * scale), int(h * scale)),
                              interpolation=cv2.INTER_LANCZOS4)
-        face_result = _try_detect(crop_up)
-        del crop_up
+            face_result = _try_detect(up2)
+            del up2
+
+    if not (face_result and face_result.face_landmarks):
+        # 第3轮备选：中心50%区域放大（人脸通常在中间）
+        cy, cx = h // 2, w // 2
+        crop = img[cy//2:cy+cy//2, cx//2:cx+cx//2]
+        if crop.size > 0 and min(crop.shape[:2]) > 100:
+            scale = 1200 / min(crop.shape[:2])
+            crop_up = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)),
+                                 interpolation=cv2.INTER_LANCZOS4)
+            face_result = _try_detect(crop_up)
+            del crop_up
+
+    # ── YuNet 双引擎补充（v5.3）──
+    if yunet_manager is not None:
+        face_result = _supplement_with_yunet(face_result, img, mp_manager, yunet_manager)
 
     return face_result
+
+
+def _supplement_with_yunet(face_result, img, mp_manager, yunet_manager):
+    """
+    用 YuNet 检测 MediaPipe 漏掉的人脸：
+    1) 计算已有 MediaPipe 人脸的包围盒；
+    2) YuNet 检出框中与已有框 IoU 过高的跳过；
+    3) 对新框裁剪（外扩 30%）→ MediaPipe landmarker 补检关键点 → 映射回原图坐标；
+    4) 合并进结果（face_landmarks 与 face_blendshapes 保持对齐）。
+
+    模型不可用 / 无新框 / 补检失败时返回原 face_result，不影响现有流程。
+    """
+    from types import SimpleNamespace
+    from .yunet import (detect_faces_yunet, merge_boxes, bbox_from_landmarks,
+                        expand_bbox, map_crop_to_orig)
+
+    existing_lms = []
+    existing_bs = []
+    if face_result is not None:
+        existing_lms = list(face_result.face_landmarks or [])
+        existing_bs = list(face_result.face_blendshapes or [])
+
+    existing_bboxes = [bbox_from_landmarks(lms, img.shape) for lms in existing_lms]
+    candidates = detect_faces_yunet(img, yunet_manager)
+    new_boxes = merge_boxes(existing_bboxes, candidates)
+    if not new_boxes:
+        return face_result
+
+    MPImage, ImageFormat = MediaPipeManager.get_mp_classes()
+    landmarker = mp_manager.get_landmarker()
+    added_lms = []
+    added_bs = []
+
+    for cand in new_boxes:
+        x, y, bw, bh = expand_bbox(cand["bbox"], img.shape)
+        crop = img[y:y + bh, x:x + bw]
+        if crop.size == 0:
+            continue
+        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        mp_img = MPImage(image_format=ImageFormat.SRGB, data=rgb)
+        try:
+            res = landmarker.detect(mp_img)
+        except Exception:
+            res = None
+        del rgb, mp_img
+        if res is None or not res.face_landmarks:
+            continue
+        for lms in res.face_landmarks:
+            mapped = map_crop_to_orig(lms, (x, y, bw, bh), img.shape)
+            if mapped:
+                added_lms.append(mapped)
+        if res.face_blendshapes:
+            added_bs.extend(res.face_blendshapes)
+
+    if not added_lms:
+        return face_result
+
+    merged = SimpleNamespace(
+        face_landmarks=existing_lms + added_lms,
+        face_blendshapes=existing_bs + added_bs,
+    )
+    return merged
 
 
 # ── 单张照片检测 ──────────────────────────────────────────
@@ -181,12 +248,20 @@ def detect_single_photo(
     path: Path,
     config: DetectionConfig,
     mp_manager: MediaPipeManager,
+    yunet_manager=None,
 ) -> PhotoResult:
     """
     对单张照片运行完整的检测流程。
     此函数可在任意线程中调用（前提是 mp_manager 支持线程局部实例）。
     """
     result = PhotoResult(path=path)
+    # v5.3: 人脸子检测可独立开关——关闭时对应字段默认通过
+    if not config.enable_eyes:
+        result.eyes_open = True
+        result.eye_score = 1.0
+    if not config.enable_skin:
+        result.skin_ok = True
+        result.skin_score = 1.0
     result.level_enabled = config.enable_level
     result.blur_enabled = config.enable_blur
     result.clarity_enabled = config.enable_clarity
@@ -239,7 +314,8 @@ def detect_single_photo(
     # 5. 人脸检测（可选开关）— 与曝光完全独立，互不依赖
     face_result = None
     if config.enable_face_detection:
-        face_result = _detect_faces(img_face, mp_manager)
+        yu = yunet_manager if config.enable_yunet else None   # v5.3: YuNet 可开关
+        face_result = _detect_faces(img_face, mp_manager, yu)
 
     # 6. 人脸相关检测（睁眼、肤色、表情、红眼等）
     if config.enable_face_detection and face_result and face_result.face_landmarks:
@@ -316,14 +392,21 @@ def _evaluate_best_face(
     skin_fail = 0
 
     for landmarks in face_result.face_landmarks:
-        try:
-            eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
-        except Exception:
-            eyes_open, eye_score = True, 0.5
-        try:
-            skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
-        except Exception:
-            skin_ok, skin_score = True, 0.5
+        # v5.3: 睁眼/肤色可独立关闭（关闭时按通过处理，不参与 fail 统计）
+        if config.enable_eyes:
+            try:
+                eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
+            except Exception:
+                eyes_open, eye_score = True, 0.5
+        else:
+            eyes_open, eye_score = True, 1.0
+        if config.enable_skin:
+            try:
+                skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
+            except Exception:
+                skin_ok, skin_score = True, 0.5
+        else:
+            skin_ok, skin_score = True, 1.0
         total = eye_score + skin_score
 
         if not eyes_open:
@@ -386,14 +469,21 @@ def _evaluate_all_faces(
     clarity_fail = 0
 
     for landmarks in face_result.face_landmarks:
-        try:
-            eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
-        except Exception:
-            eyes_open, eye_score = True, 0.5
-        try:
-            skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
-        except Exception:
-            skin_ok, skin_score = True, 0.5
+        # v5.3: 睁眼/肤色可独立关闭
+        if config.enable_eyes:
+            try:
+                eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
+            except Exception:
+                eyes_open, eye_score = True, 0.5
+        else:
+            eyes_open, eye_score = True, 1.0
+        if config.enable_skin:
+            try:
+                skin_ok, skin_score = check_skin_tone(img_face, landmarks, lab=lab)
+            except Exception:
+                skin_ok, skin_score = True, 0.5
+        else:
+            skin_ok, skin_score = True, 1.0
 
         if not eyes_open:
             all_eyes_open = False

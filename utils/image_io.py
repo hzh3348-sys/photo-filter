@@ -142,24 +142,36 @@ def load_raw_thumbnail(path: Path, size: int = 128) -> Optional[np.ndarray]:
     return None
 
 
-def load_image(path: Path, max_dim: int = MAX_IMAGE_DIM) -> Optional[np.ndarray]:
+def load_image(path: Path, max_dim: int = MAX_IMAGE_DIM,
+                 reduced: Optional[int] = None) -> Optional[np.ndarray]:
     """
     从路径加载图片，支持中文路径 + RAW 格式。
     返回 BGR 格式的 numpy 数组，大图自动等比缩放。
     失败返回 None。
+
+    reduced: 仅对 JPEG 有效，用 IMREAD_REDUCED_COLOR_x 做 DCT 降采样解码
+             （2=1/2, 4=1/4, 8=1/8 尺寸），缩略图场景提速数倍（v5.3）。
     """
     # RAW 格式 → rawpy 解码
     if _is_raw(path):
         return load_raw_image(path, max_dim)
 
-    # 标准格式 → cv2.imdecode
+    # 标准格式 → cv2.imdecode（JPEG 支持降采样标志）
     try:
         with open(path, 'rb') as f:
             img_bytes = f.read()
     except (OSError, IOError):
         return None
 
-    img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    flags = cv2.IMREAD_COLOR
+    if reduced == 2:
+        flags = cv2.IMREAD_REDUCED_COLOR_2
+    elif reduced == 4:
+        flags = cv2.IMREAD_REDUCED_COLOR_4
+    elif reduced == 8:
+        flags = cv2.IMREAD_REDUCED_COLOR_8
+
+    img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), flags)
     if img is None:
         return None
 
@@ -181,7 +193,11 @@ def load_thumbnail(path: Path, size: int = 128) -> Optional[np.ndarray]:
         # 回退到完整解码
         img = load_raw_image(path, max_dim=size * 2)
     else:
-        img = load_image(path, max_dim=size * 2)
+        # v5.3: JPEG 缩略图用 DCT 降采样解码（1/8 或 1/4 尺寸），提速 4~8 倍
+        reduced = None
+        if Path(path).suffix.lower() in ('.jpg', '.jpeg'):
+            reduced = 8 if size <= 96 else (4 if size <= 192 else 2)
+        img = load_image(path, max_dim=size * 2, reduced=reduced)
 
     if img is None:
         return None

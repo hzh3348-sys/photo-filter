@@ -100,6 +100,38 @@ class AppConfig:
     # ── 检测选项 ──────────────────────────────────────────
 
     @property
+    def enable_eyes(self) -> bool:
+        return _as_bool(self._settings.value("options/eyes", True))
+
+    @enable_eyes.setter
+    def enable_eyes(self, value: bool):
+        self._settings.setValue("options/eyes", value)
+
+    @property
+    def enable_skin(self) -> bool:
+        return _as_bool(self._settings.value("options/skin", True))
+
+    @enable_skin.setter
+    def enable_skin(self, value: bool):
+        self._settings.setValue("options/skin", value)
+
+    @property
+    def enable_clarity(self) -> bool:
+        return _as_bool(self._settings.value("options/clarity", False))
+
+    @enable_clarity.setter
+    def enable_clarity(self, value: bool):
+        self._settings.setValue("options/clarity", value)
+
+    @property
+    def enable_yunet(self) -> bool:
+        return _as_bool(self._settings.value("options/yunet", True))
+
+    @enable_yunet.setter
+    def enable_yunet(self, value: bool):
+        self._settings.setValue("options/yunet", value)
+
+    @property
     def enable_face_detection(self) -> bool:
         return _as_bool(self._settings.value("options/face_detection", True))
 

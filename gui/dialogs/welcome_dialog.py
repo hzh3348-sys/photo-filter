@@ -38,7 +38,7 @@ class WelcomeDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("v5.2")
+        version = QLabel("v5.3")
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: palette(placeholder-text); font-size: 12px;")
         layout.addWidget(version)

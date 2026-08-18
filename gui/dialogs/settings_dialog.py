@@ -3,9 +3,9 @@
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QScrollArea,
     QPushButton, QLabel, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox,
-    QDialogButtonBox, QTextBrowser, QComboBox,
+    QDialogButtonBox, QTextBrowser, QComboBox, QFrame, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -22,13 +22,28 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("设置")
         self.setMinimumWidth(420)
+        self.resize(470, 660)   # v5.3: 固定合理高度，内容超高时走滚动
         self._config = AppConfig()
         self._theme_mgr = ThemeManager()
         self._setup_ui()
         self._load_settings()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # v5.3: 内容放入滚动区（设置项太多，小屏/高分屏显示不全），按钮固定底部
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 12, 12, 10)
+        outer.setSpacing(10)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setObjectName("settingsScroll")
+
+        _content = QWidget()
+        _content.setObjectName("settingsScrollContent")
+        layout = QVBoxLayout(_content)
+        layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(12)
 
         # ── 外观 ──
@@ -120,6 +135,36 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(thresh_group)
 
+        # ── 人脸检测子项（v5.3 独立开关）──
+        face_group = QGroupBox("人脸检测")
+        face_form = QFormLayout(face_group)
+
+        self.eyes_check = QCheckBox("睁眼检测")
+        self.eyes_check.setToolTip("基于 EAR 算法判断眼睛是否睁开（关眼/眯眼筛选）")
+        face_form.addRow(self.eyes_check)
+
+        self.skin_check = QCheckBox("肤色检测")
+        self.skin_check.setToolTip("L*a*b* 色彩空间判断面部肤色是否自然")
+        face_form.addRow(self.skin_check)
+
+        self.clarity_check = QCheckBox("人脸清晰度")
+        self.clarity_check.setToolTip("专注人脸区域的局部锐度评估")
+        face_form.addRow(self.clarity_check)
+
+        self.expression_check = QCheckBox("表情/笑容")
+        self.expression_check.setToolTip("MediaPipe Blendshapes 检测笑容度、张嘴、表情僵硬")
+        face_form.addRow(self.expression_check)
+
+        self.red_eye_check = QCheckBox("红眼检测")
+        self.red_eye_check.setToolTip("HSV 瞳孔区域分析，识别闪光灯红眼")
+        face_form.addRow(self.red_eye_check)
+
+        self.yunet_check = QCheckBox("YuNet 双引擎补检")
+        self.yunet_check.setToolTip("OpenCV YuNet 检出 MediaPipe 漏掉的小脸/侧脸/暗光人脸（需 face_detection_yunet_2023mar.onnx 模型文件）")
+        face_form.addRow(self.yunet_check)
+
+        layout.addWidget(face_group)
+
         # ── 默认行为 ──
         behavior_group = QGroupBox("默认行为")
         behavior_form = QFormLayout(behavior_group)
@@ -140,11 +185,19 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v5.2</b></p>
+            <p><b>照片自动筛选工具 v5.3</b></p>
             <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复 + 表情 + 红眼</p>
             <p>作者：<b>HZH</b> &nbsp;|&nbsp;
                <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
             <hr>
+
+            <p style="font-size:13px; font-weight:bold; color:#16a34a;">v5.3 UI 精细度与性能</p>
+            <p style="font-size:12px; line-height:1.6;">
+            <span style="font-weight:bold; color:#16a34a;">+</span> <b>圆角对齐与动画</b> — 统一圆角 token、侧边栏/进度/统计/预览动画<br>
+            <span style="font-weight:bold; color:#16a34a;">+</span> <b>预览提速</b> — JPEG/PNG 降采样解码 + 低清先显/高清后替换<br>
+            <span style="font-weight:bold; color:#16a34a;">+</span> <b>细节修复</b> — 下拉弹出框圆角、开关动画续帧、侧边栏掉帧优化<br>
+            <span style="font-weight:bold; color:#16a34a;">+</span> <b>设置可滚动</b> — 设置项超高时滚动显示，按钮固定底部<br>
+            </p>
 
             <p style="font-size:13px; font-weight:bold; color:#6366f1;">v5.2 界面重构</p>
             <p style="font-size:12px; line-height:1.6;">
@@ -182,7 +235,8 @@ class SettingsDialog(QDialog):
             曝光检测 · 肤色检测 (EAR) · 睁眼检测 · 构图检测 · MediaPipe FaceLandmarker · 跨平台 · CI 自动构建
             </p>
         """)
-        about_text.setMinimumHeight(280)
+        # v5.3: 设置已放入滚动区，关于区高度收敛，避免过长
+        about_text.setMinimumHeight(200)
         about_layout.addWidget(about_text)
 
         layout.addWidget(about_group)
@@ -203,13 +257,24 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         btn_row.addWidget(buttons)
 
-        layout.addLayout(btn_row)
+        # 内容进滚动区，按钮固定在底部
+        self._scroll.setWidget(_content)
+        outer.addWidget(self._scroll, 1)
+        outer.addLayout(btn_row)
 
     def _load_settings(self):
         """从配置中加载当前值。"""
         self.workers_spin.setValue(self._config.max_workers)
         self.copy_check.setChecked(self._config.copy_mode)
         self.raw_check.setChecked(self._config.prefer_raw)
+
+        # 人脸检测子项（v5.3）
+        self.eyes_check.setChecked(self._config.enable_eyes)
+        self.skin_check.setChecked(self._config.enable_skin)
+        self.clarity_check.setChecked(self._config.enable_clarity)
+        self.expression_check.setChecked(self._config.enable_expression)
+        self.red_eye_check.setChecked(self._config.enable_red_eye)
+        self.yunet_check.setChecked(self._config.enable_yunet)
 
         # 检测阈值（v5.2）
         self.ear_spin.setValue(self._config.ear_threshold)
@@ -236,6 +301,14 @@ class SettingsDialog(QDialog):
         self._config.copy_mode = self.copy_check.isChecked()
         self._config.prefer_raw = self.raw_check.isChecked()
 
+        # 人脸检测子项（v5.3）
+        self._config.enable_eyes = self.eyes_check.isChecked()
+        self._config.enable_skin = self.skin_check.isChecked()
+        self._config.enable_clarity = self.clarity_check.isChecked()
+        self._config.enable_expression = self.expression_check.isChecked()
+        self._config.enable_red_eye = self.red_eye_check.isChecked()
+        self._config.enable_yunet = self.yunet_check.isChecked()
+
         # 检测阈值（v5.2）
         self._config.ear_threshold = self.ear_spin.value()
         self._config.over_threshold = self.over_spin.value()
@@ -251,16 +324,15 @@ class SettingsDialog(QDialog):
         new_theme = self.theme_combo.currentData()
         if new_theme != self._config.theme:
             self._theme_mgr.apply_theme(new_theme)
-            # v5.2 修复：主题切换后刷新主窗口玻璃背景 + 图标颜色
+            # v5.3: 统一走 refresh_theme_appearance（玻璃背景 + 图标 + 空状态重排）
             parent = self.parent()
             if parent is not None:
-                for method in ("_apply_glass_background", "_update_theme_icon"):
-                    fn = getattr(parent, method, None)
-                    if callable(fn):
-                        try:
-                            fn()
-                        except Exception:
-                            pass
+                fn = getattr(parent, "refresh_theme_appearance", None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
 
         self.accept()
 
@@ -274,6 +346,12 @@ class SettingsDialog(QDialog):
         self.workers_spin.setValue(DEFAULT_MAX_WORKERS)
         self.copy_check.setChecked(True)
         self.raw_check.setChecked(True)  # v5.1: 补上 RAW 优先的默认恢复
+        self.eyes_check.setChecked(True)
+        self.skin_check.setChecked(True)
+        self.clarity_check.setChecked(False)
+        self.expression_check.setChecked(False)
+        self.red_eye_check.setChecked(False)
+        self.yunet_check.setChecked(True)
 
         # 检测阈值恢复默认（v5.2）
         self.ear_spin.setValue(DEFAULT_EAR_THRESHOLD)
