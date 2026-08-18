@@ -63,7 +63,8 @@ by HZH
 
 检测人脸时同时使用 MediaPipe FaceLandmarker 与 OpenCV YuNet（双引擎互补）：
 - MediaPipe 漏检的小脸/侧脸/暗光人脸，由 YuNet 检出后补提 468 关键点，提升检出率
-- 模型文件 `face_detection_yunet_2023mar.onnx`（约 232KB）下载：
+- **发布版 zip 已内置两个模型**，用户无需任何操作
+- 源码运行时才需要模型文件 `face_detection_yunet_2023mar.onnx`（约 232KB）：
   ```bash
   python tools/download_yunet_model.py
   ```
@@ -71,9 +72,14 @@ by HZH
 
 ## 使用方式
 
-### Windows 用户
+### Windows 用户（免安装，推荐）
 
-从 [Releases](../../releases) 下载最新 `照片筛选GUI_v5.3_by_HZH.zip`，解压后双击 exe 即用。
+1. 从 [Releases](../../releases) 下载最新 **`照片筛选GUI_v5.3_by_HZH.zip`**（约 290MB）
+2. **完整解压整个 zip** —— ⚠️ 程序是"绿色文件夹"结构，`照片筛选GUI_v5.3_by_HZH.exe` 必须与同目录的 `_internal` 依赖文件夹放在一起才能运行，**不要只单独下载/拷走 exe**
+3. 双击 **`照片筛选GUI_v5.3_by_HZH.exe`** 即可使用，无需安装
+
+> ✅ 人脸模型（MediaPipe + YuNet）已内置在 zip 中，用户**无需下载任何模型文件**。
+> ❓ 源码方式运行才需要按下文说明下载模型。
 
 ### 源码运行（Windows / macOS / Linux）
 
