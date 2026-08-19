@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   照片筛选工具 v5.3 — 深色主题（Harness 开发者工具风格）
+   照片筛选工具 v5.3.1 — 深色主题（Harness 开发者工具风格）
    tokens: bg #0b0d12 / panel #12151c / border rgba(255,255,255,.07)
    text #e6e9ef / text2 #8b93a5 / accent #4f9cf9 / 紧凑圆角
    ══════════════════════════════════════════════════════════ */
@@ -18,7 +18,7 @@ QDialog {
     background-color: #12151c;
 }
 
-/* ── 设置滚动区（v5.3） ─────────────────────────── */
+/* ── 设置滚动区（v5.3.1） ─────────────────────────── */
 QScrollArea#settingsScroll {
     background: transparent;
     border: none;
@@ -41,7 +41,7 @@ QLabel#appVersion {
     font-size: 11px;
     color: #5c6474;
     font-weight: 500;
-    padding: 1px 6px;   /* v5.3: 去掉灰色底色/边框，纯文字 */
+    padding: 1px 6px;   /* v5.3.1: 去掉灰色底色/边框，纯文字 */
 }
 
 /* ── 卡片（细边框面板，无重阴影） ────────────────────── */
@@ -278,7 +278,7 @@ QComboBox QAbstractItemView::item:hover {
     background-color: rgba(79, 156, 249, 0.12);
 }
 
-/* ── 下拉菜单（ChevronComboBox 自绘控件用 QMenu 弹出，v5.3） ── */
+/* ── 下拉菜单（ChevronComboBox 自绘控件用 QMenu 弹出，v5.3.1） ── */
 QMenu {
     background-color: #1a1e27;
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -497,7 +497,7 @@ QGroupBox::title {
     background-color: #10131a;
 }
 
-/* ── 设置对话框：关于信息区（v5.3） ─────────────────── */
+/* ── 设置对话框：关于信息区（v5.3.1） ─────────────────── */
 QTextBrowser {
     background-color: #10131a;
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -510,7 +510,7 @@ QSpinBox, QDoubleSpinBox {
     min-height: 22px;
 }
 
-/* ── 欢迎页（v5.3 主题适配） ─────────────────────────── */
+/* ── 欢迎页（v5.3.1 主题适配） ─────────────────────────── */
 QLabel#welcomeTitle { color: #f0f2f7; }
 QLabel#welcomeVersion, QLabel#welcomeTip, QCheckBox#welcomeSkip { color: #8b93a5; }
 QFrame#welcomeCard {

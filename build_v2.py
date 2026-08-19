@@ -36,12 +36,12 @@ env = os.environ.copy()
 
 model_file = os.path.join(os.getcwd(), "face_landmarker.task")
 themes_dir = os.path.join(os.getcwd(), "resources", "themes")
-yunet_file = os.path.join(os.getcwd(), "face_detection_yunet_2023mar.onnx")  # v5.3: 可选
+yunet_file = os.path.join(os.getcwd(), "face_detection_yunet_2023mar.onnx")  # v5.3.1: 可选
 
 cmd = [
     sys.executable, "-m", "PyInstaller",
     "--onedir", "--windowed",
-    "--name", "照片筛选GUI_v5.3_by_HZH",
+    "--name", "照片筛选GUI_v5.3.1_by_HZH",
     "--icon", os.path.join(os.getcwd(), "app_icon.ico"),
     "--add-data", f"{model_file};.",
     "--add-data", f"{themes_dir};resources/themes",
@@ -72,11 +72,11 @@ cmd = [
 ]
 
 print("=" * 50)
-print("  打包 v5.3 (--onedir 便携模式)")
+print("  打包 v5.3.1 (--onedir 便携模式)")
 print("=" * 50)
 print(f"  模型: {model_file}")
 print(f"  插件: {plugins_dir}")
-if os.path.exists(yunet_file):  # v5.3: YuNet 模型（可选）
+if os.path.exists(yunet_file):  # v5.3.1: YuNet 模型（可选）
     cmd += ["--add-data", f"{yunet_file};."]
 print()
 
@@ -93,9 +93,9 @@ if result.stderr:
 print(f"\n构建{'成功' if result.returncode == 0 else '失败'} (exit: {result.returncode})")
 
 if result.returncode == 0:
-    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v5.3_by_HZH")
-    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.3_by_HZH")
-    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.3_by_HZH.zip")
+    folder_src = os.path.join(os.getcwd(), "dist", "照片筛选GUI_v5.3.1_by_HZH")
+    folder_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.3.1_by_HZH")
+    zip_dst = os.path.join(os.getcwd(), "照片筛选GUI_v5.3.1_by_HZH.zip")
 
     # 清理旧版
     if os.path.exists(folder_dst): shutil.rmtree(folder_dst, ignore_errors=True)

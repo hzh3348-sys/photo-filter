@@ -62,7 +62,7 @@ def create_splash() -> QSplashScreen:
     painter.drawText(0, 90, 400, 25, Qt.AlignCenter, "正在启动，请稍候...")
     font.setPointSize(8)
     painter.setFont(font)
-    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.3")
+    painter.drawText(0, 170, 400, 20, Qt.AlignCenter, "by HZH  |  v5.3.1")
     painter.end()
     return QSplashScreen(pixmap)
 
@@ -74,7 +74,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("照片自动筛选工具 by HZH  v5.3")
+        self.setWindowTitle("照片自动筛选工具 by HZH  v5.3.1")
         self.setMinimumSize(980, 720)
         self.resize(1080, 800)
         self.results_data = []
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         self._preview_mgr = PreviewManager(self)
         self._preview_path = ""   # 当前预览对应的路径（防过期覆盖）
 
-        # ── UI 动画状态（v5.3 精细度）──
+        # ── UI 动画状态（v5.3.1 精细度）──
         self._sidebar_width = 320      # 侧边栏展开宽度（折叠动画目标值）
         self._sidebar_anim = None
         self._progress_anim = None
@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
         title = QLabel("照片自动筛选工具")
         title.setObjectName("appTitle")
         hrow.addWidget(title)
-        ver = QLabel("v5.3")
+        ver = QLabel("v5.3.1")
         ver.setObjectName("appVersion")
         hrow.addWidget(ver)
         hrow.addStretch()
@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self.face_mode_combo.setToolTip(
             "最优人脸：生活照模式，取最佳人脸评估\n所有人脸：合照模式，每张脸都必须通过")
         self.face_mode_combo.setMinimumWidth(96)
-        # v5.3: 自绘下拉框不吃 QSS 字体，改用真实字体
+        # v5.3.1: 自绘下拉框不吃 QSS 字体，改用真实字体
         _combo_font = QFont()
         _combo_font.setPixelSize(11)
         self.face_mode_combo.setFont(_combo_font)
@@ -200,7 +200,7 @@ class MainWindow(QMainWindow):
         self.face_check.toggled.connect(self._on_face_toggled)
         self._opt_row(dc, "人脸检测", self.face_check, extra=self.face_mode_combo)
 
-        # v5.3: 表情/红眼/清晰度/睁眼/肤色等子项已收进「设置 → 人脸检测」独立开关
+        # v5.3.1: 表情/红眼/清晰度/睁眼/肤色等子项已收进「设置 → 人脸检测」独立开关
 
         # 构图水平
         self.level_check = ToggleSwitch()
@@ -356,7 +356,7 @@ class MainWindow(QMainWindow):
         body.setSizes([372, 900])  # 初始左/右宽度
 
     def _toggle_sidebar(self):
-        """折叠/展开左侧控制面板（v5.3: 宽度平滑动画）。"""
+        """折叠/展开左侧控制面板（v5.3.1: 宽度平滑动画）。"""
         left = self._sidebar_widget
         try:
             if self._sidebar_anim is None:
@@ -489,7 +489,7 @@ class MainWindow(QMainWindow):
         self._update_theme_icon()
 
     def _toggle_theme(self):
-        """切换浅色/深色主题（v5.3: 直接切换，不引入透明度效果，避免界面模糊）。"""
+        """切换浅色/深色主题（v5.3.1: 直接切换，不引入透明度效果，避免界面模糊）。"""
         tm = ThemeManager()
         nxt = THEME_DARK if tm.effective_theme == THEME_LIGHT else THEME_LIGHT
         tm.apply_theme(nxt)
@@ -520,7 +520,7 @@ class MainWindow(QMainWindow):
     def _make_card(self, title: str):
         """创建细边框面板卡片（Harness 风格：纯边框层次），返回 (card, layout)。
 
-        v5.3: 不再使用 QGraphicsDropShadowEffect——它投影的是整个卡片渲染结果，
+        v5.3.1: 不再使用 QGraphicsDropShadowEffect——它投影的是整个卡片渲染结果，
         会把卡片内按钮/开关的文字也描出一层暗影（"字完全是两层"），
         且动画期间重绘昂贵导致侧边栏掉帧。细边框 + 背景色差已足够分层。
         """
@@ -548,7 +548,7 @@ class MainWindow(QMainWindow):
         row.addWidget(toggle)
         layout.addLayout(row)
 
-    # ── UI 动画与细节辅助（v5.3）─────────────────────────────
+    # ── UI 动画与细节辅助（v5.3.1）─────────────────────────────
 
     def _animate_progress(self, target: int):
         """进度条平滑推进（而非瞬跳）。"""
@@ -690,7 +690,7 @@ class MainWindow(QMainWindow):
         config.output_dir = self.output_edit.text().strip()
         config.enable_face_detection = self.face_check.isChecked()
         config.face_mode = self.face_mode_combo.currentData() or FACE_MODE_BEST
-        # v5.3: 人脸子项开关由设置对话框管理（enable_expression 等）
+        # v5.3.1: 人脸子项开关由设置对话框管理（enable_expression 等）
         config.enable_blur = self.blur_check.isChecked()
         config.enable_duplicate = self.duplicate_check.isChecked()
         config.enable_level = self.level_check.isChecked()
@@ -864,7 +864,7 @@ class MainWindow(QMainWindow):
             # 不再同步 wait(3000) —— 优雅停止完成后由 _on_cancelled 恢复界面
 
     def _on_progress(self, index, filename, passed, reason):
-        """处理进度更新（v5.3: 进度平滑推进 + 状态分级）。"""
+        """处理进度更新（v5.3.1: 进度平滑推进 + 状态分级）。"""
         self._animate_progress(index)
         self._set_status(f"分析中: {filename}" if filename else reason, "run")
 
@@ -895,7 +895,7 @@ class MainWindow(QMainWindow):
         result_item.setFont(bf)
         self.table.setItem(row, 2, result_item)
         self.table.setItem(row, 3, QTableWidgetItem(reason))
-        # v5.3: 状态/结果单元格加低透明度底色（柔化 pill 效果）
+        # v5.3.1: 状态/结果单元格加低透明度底色（柔化 pill 效果）
         tint = QColor(46, 125, 50, 24) if passed else QColor(229, 57, 53, 24)
         status_item.setBackground(tint)
         result_item.setBackground(tint)
@@ -909,7 +909,7 @@ class MainWindow(QMainWindow):
     def _request_preview(self, photo_path: str, size: int = 220):
         """异步请求缩略图预览。
 
-        v5.3: 两级加载——先请求 96px 低清（DCT 降采样解码，几乎即时），
+        v5.3.1: 两级加载——先请求 96px 低清（DCT 降采样解码，几乎即时），
         再请求目标尺寸高清替换，保证"分析到哪张立即显示哪张"。
         """
         from pathlib import Path
@@ -933,13 +933,13 @@ class MainWindow(QMainWindow):
         """显示预览图（主线程，来自后台加载）。"""
         if photo_path != self._preview_path:
             return  # 过期请求，丢弃
-        # v5.3: 低清迟到回调不覆盖已显示的更高清图
+        # v5.3.1: 低清迟到回调不覆盖已显示的更高清图
         if img.width() < self._preview_last_size:
             return
         from PySide6.QtGui import QPixmap
         pix = QPixmap.fromImage(img)
         if not pix.isNull():
-            # v5.3: 圆角遮罩与预览框 QSS(padding 6px / radius 10px) 对齐
+            # v5.3.1: 圆角遮罩与预览框 QSS(padding 6px / radius 10px) 对齐
             scaled = pix.scaled(216, 288, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.preview_label.setPixmap(self._rounded_pixmap(scaled, radius=10))
             self.preview_label.setVisible(True)
@@ -1022,7 +1022,7 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "错误", f"处理过程中发生错误:\n\n{error_msg}")
 
     def _update_summary(self, animated: bool = False):
-        """更新底部汇总卡片（v5.3: 数字滚动 + 整体淡入）。"""
+        """更新底部汇总卡片（v5.3.1: 数字滚动 + 整体淡入）。"""
         if not self.results_data:
             self.summary_widget.setVisible(False)
             return

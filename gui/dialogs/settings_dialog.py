@@ -22,14 +22,14 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("设置")
         self.setMinimumWidth(420)
-        self.resize(470, 660)   # v5.3: 固定合理高度，内容超高时走滚动
+        self.resize(470, 660)   # v5.3.1: 固定合理高度，内容超高时走滚动
         self._config = AppConfig()
         self._theme_mgr = ThemeManager()
         self._setup_ui()
         self._load_settings()
 
     def _setup_ui(self):
-        # v5.3: 内容放入滚动区（设置项太多，小屏/高分屏显示不全），按钮固定底部
+        # v5.3.1: 内容放入滚动区（设置项太多，小屏/高分屏显示不全），按钮固定底部
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 10)
         outer.setSpacing(10)
@@ -135,7 +135,7 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(thresh_group)
 
-        # ── 人脸检测子项（v5.3 独立开关）──
+        # ── 人脸检测子项（v5.3.1 独立开关）──
         face_group = QGroupBox("人脸检测")
         face_form = QFormLayout(face_group)
 
@@ -185,7 +185,7 @@ class SettingsDialog(QDialog):
         about_text = QTextBrowser()
         about_text.setOpenExternalLinks(True)
         about_text.setHtml("""
-            <p><b>照片自动筛选工具 v5.3</b></p>
+            <p><b>照片自动筛选工具 v5.3.1</b></p>
             <p>自动筛选照片：曝光 + 肤色 + 睁眼 + 构图 + 模糊 + 重复 + 表情 + 红眼</p>
             <p>作者：<b>HZH</b> &nbsp;|&nbsp;
                <a href="https://github.com/hzh3348-sys/photo-filter">GitHub</a></p>
@@ -235,7 +235,7 @@ class SettingsDialog(QDialog):
             曝光检测 · 肤色检测 (EAR) · 睁眼检测 · 构图检测 · MediaPipe FaceLandmarker · 跨平台 · CI 自动构建
             </p>
         """)
-        # v5.3: 设置已放入滚动区，关于区高度收敛，避免过长
+        # v5.3.1: 设置已放入滚动区，关于区高度收敛，避免过长
         about_text.setMinimumHeight(200)
         about_layout.addWidget(about_text)
 
@@ -268,7 +268,7 @@ class SettingsDialog(QDialog):
         self.copy_check.setChecked(self._config.copy_mode)
         self.raw_check.setChecked(self._config.prefer_raw)
 
-        # 人脸检测子项（v5.3）
+        # 人脸检测子项（v5.3.1）
         self.eyes_check.setChecked(self._config.enable_eyes)
         self.skin_check.setChecked(self._config.enable_skin)
         self.clarity_check.setChecked(self._config.enable_clarity)
@@ -301,7 +301,7 @@ class SettingsDialog(QDialog):
         self._config.copy_mode = self.copy_check.isChecked()
         self._config.prefer_raw = self.raw_check.isChecked()
 
-        # 人脸检测子项（v5.3）
+        # 人脸检测子项（v5.3.1）
         self._config.enable_eyes = self.eyes_check.isChecked()
         self._config.enable_skin = self.skin_check.isChecked()
         self._config.enable_clarity = self.clarity_check.isChecked()
@@ -324,7 +324,7 @@ class SettingsDialog(QDialog):
         new_theme = self.theme_combo.currentData()
         if new_theme != self._config.theme:
             self._theme_mgr.apply_theme(new_theme)
-            # v5.3: 统一走 refresh_theme_appearance（玻璃背景 + 图标 + 空状态重排）
+            # v5.3.1: 统一走 refresh_theme_appearance（玻璃背景 + 图标 + 空状态重排）
             parent = self.parent()
             if parent is not None:
                 fn = getattr(parent, "refresh_theme_appearance", None)

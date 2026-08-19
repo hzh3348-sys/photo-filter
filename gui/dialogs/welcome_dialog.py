@@ -28,7 +28,7 @@ class WelcomeDialog(QDialog):
         layout.setSpacing(16)
         layout.setContentsMargins(32, 24, 32, 24)
 
-        # 标题（v5.3: 颜色走主题 QSS，深色模式不白）
+        # 标题（v5.3.1: 颜色走主题 QSS，深色模式不白）
         title = QLabel("欢迎使用照片自动筛选工具")
         title.setObjectName("welcomeTitle")
         title.setAlignment(Qt.AlignCenter)
@@ -39,7 +39,7 @@ class WelcomeDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("v5.3")
+        version = QLabel("v5.3.1")
         version.setObjectName("welcomeVersion")
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("font-size: 12px;")
@@ -58,7 +58,7 @@ class WelcomeDialog(QDialog):
         card_row.setSpacing(12)
         for emoji, title_text, desc in cards:
             card = QFrame()
-            # v5.3: 颜色全部走主题 QSS（palette(base) 在深色主题下仍是白色，会发白）
+            # v5.3.1: 颜色全部走主题 QSS（palette(base) 在深色主题下仍是白色，会发白）
             card.setObjectName("welcomeCard")
             card_layout = QVBoxLayout(card)
             card_layout.setSpacing(4)

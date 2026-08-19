@@ -1,5 +1,5 @@
 """
-下拉框 — QWidget 自绘 + QMenu 弹出（v5.3 全新实现）。
+下拉框 — QWidget 自绘 + QMenu 弹出（v5.3.1 全新实现）。
 
 背景（踩坑记录，勿回退）：
 - QComboBox + QSS 在真实 Windows（Qt 6.9）上文本会双绘（"字上下两层"），

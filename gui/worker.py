@@ -119,7 +119,7 @@ class ProcessWorker(QThread):
             # 主线程预热模型
             main_mp = MediaPipeManager()
             _ = main_mp.model_bytes
-            # v5.3: YuNet 双引擎（模型缺失时自动降级）
+            # v5.3.1: YuNet 双引擎（模型缺失时自动降级）
             if self.config.enable_yunet and YuNetManager().available:
                 self.status_update.emit("已启用 MediaPipe + YuNet 双引擎人脸检测")
             self.status_update.emit("正在分析照片（并行模式）...")

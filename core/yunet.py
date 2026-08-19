@@ -1,5 +1,5 @@
 """
-OpenCV YuNet 人脸检测 — MediaPipe 双引擎互补 (v5.3)。
+OpenCV YuNet 人脸检测 — MediaPipe 双引擎互补 (v5.3.1)。
 
 YuNet (cv2.FaceDetectorYN) 由 OpenCV 内置，模型 face_detection_yunet_2023mar.onnx
 需放在项目根目录（与 face_landmarker.task 同级）。模型缺失或 OpenCV 版本过旧时

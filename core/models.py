@@ -191,9 +191,9 @@ class DetectionConfig:
 
     # 人脸检测
     enable_face_detection: bool = True       # 人脸检测总开关（关闭则仅检曝光）
-    enable_eyes: bool = True                 # 睁眼检测（v5.3 设置中可独立开关）
-    enable_skin: bool = True                 # 肤色检测（v5.3 设置中可独立开关）
-    enable_yunet: bool = True                # OpenCV YuNet 双引擎补检（v5.3 设置中可开关）
+    enable_eyes: bool = True                 # 睁眼检测（v5.3.1 设置中可独立开关）
+    enable_skin: bool = True                 # 肤色检测（v5.3.1 设置中可独立开关）
+    enable_yunet: bool = True                # OpenCV YuNet 双引擎补检（v5.3.1 设置中可开关）
 
     # 合照模式: "best" 取最优人脸 / "all" 所有人脸通过才算合格
     face_mode: str = "best"

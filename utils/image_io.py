@@ -150,7 +150,7 @@ def load_image(path: Path, max_dim: int = MAX_IMAGE_DIM,
     失败返回 None。
 
     reduced: 仅对 JPEG 有效，用 IMREAD_REDUCED_COLOR_x 做 DCT 降采样解码
-             （2=1/2, 4=1/4, 8=1/8 尺寸），缩略图场景提速数倍（v5.3）。
+             （2=1/2, 4=1/4, 8=1/8 尺寸），缩略图场景提速数倍（v5.3.1）。
     """
     # RAW 格式 → rawpy 解码
     if _is_raw(path):
@@ -193,7 +193,7 @@ def load_thumbnail(path: Path, size: int = 128) -> Optional[np.ndarray]:
         # 回退到完整解码
         img = load_raw_image(path, max_dim=size * 2)
     else:
-        # v5.3: JPEG 缩略图用 DCT 降采样解码（1/8 或 1/4 尺寸），提速 4~8 倍
+        # v5.3.1: JPEG 缩略图用 DCT 降采样解码（1/8 或 1/4 尺寸），提速 4~8 倍
         reduced = None
         if Path(path).suffix.lower() in ('.jpg', '.jpeg'):
             reduced = 8 if size <= 96 else (4 if size <= 192 else 2)

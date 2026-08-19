@@ -1,4 +1,4 @@
-"""UI 主题 QSS 一致性测试 — 守护圆角 token / 关键选择器 / 括号平衡 (v5.3)。
+"""UI 主题 QSS 一致性测试 — 守护圆角 token / 关键选择器 / 括号平衡 (v5.3.1)。
 
 不依赖 Qt 实例化，纯文件级校验，防止后续改动破坏两套主题的细节对齐。
 """
@@ -30,7 +30,7 @@ def test_radius_tokens_aligned():
 
 
 def test_key_selectors_present():
-    """v5.3 新增/调整的关键选择器必须存在。"""
+    """v5.3.1 新增/调整的关键选择器必须存在。"""
     for name in ("dark", "light"):
         qss = _load(name)
         for sel in (

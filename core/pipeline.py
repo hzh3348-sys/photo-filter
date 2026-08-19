@@ -121,7 +121,7 @@ def _detect_faces(img, mp_manager, yunet_manager=None):
     """
     人脸检测：
     1) MediaPipe 三轮（原图 → 1200px → 1800px + 中心裁剪），大幅提升小脸/侧脸/暗光检出率；
-    2) YuNet 双引擎补充（v5.3）：MediaPipe 漏检的人脸框 → 裁剪 → MediaPipe 关键点，
+    2) YuNet 双引擎补充（v5.3.1）：MediaPipe 漏检的人脸框 → 裁剪 → MediaPipe 关键点，
        合并进结果。模型缺失时自动降级为纯 MediaPipe。
     """
     h, w = img.shape[:2]
@@ -173,7 +173,7 @@ def _detect_faces(img, mp_manager, yunet_manager=None):
             face_result = _try_detect(crop_up)
             del crop_up
 
-    # ── YuNet 双引擎补充（v5.3）──
+    # ── YuNet 双引擎补充（v5.3.1）──
     if yunet_manager is not None:
         face_result = _supplement_with_yunet(face_result, img, mp_manager, yunet_manager)
 
@@ -255,7 +255,7 @@ def detect_single_photo(
     此函数可在任意线程中调用（前提是 mp_manager 支持线程局部实例）。
     """
     result = PhotoResult(path=path)
-    # v5.3: 人脸子检测可独立开关——关闭时对应字段默认通过
+    # v5.3.1: 人脸子检测可独立开关——关闭时对应字段默认通过
     if not config.enable_eyes:
         result.eyes_open = True
         result.eye_score = 1.0
@@ -314,7 +314,7 @@ def detect_single_photo(
     # 5. 人脸检测（可选开关）— 与曝光完全独立，互不依赖
     face_result = None
     if config.enable_face_detection:
-        yu = yunet_manager if config.enable_yunet else None   # v5.3: YuNet 可开关
+        yu = yunet_manager if config.enable_yunet else None   # v5.3.1: YuNet 可开关
         face_result = _detect_faces(img_face, mp_manager, yu)
 
     # 6. 人脸相关检测（睁眼、肤色、表情、红眼等）
@@ -392,7 +392,7 @@ def _evaluate_best_face(
     skin_fail = 0
 
     for landmarks in face_result.face_landmarks:
-        # v5.3: 睁眼/肤色可独立关闭（关闭时按通过处理，不参与 fail 统计）
+        # v5.3.1: 睁眼/肤色可独立关闭（关闭时按通过处理，不参与 fail 统计）
         if config.enable_eyes:
             try:
                 eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)
@@ -469,7 +469,7 @@ def _evaluate_all_faces(
     clarity_fail = 0
 
     for landmarks in face_result.face_landmarks:
-        # v5.3: 睁眼/肤色可独立关闭
+        # v5.3.1: 睁眼/肤色可独立关闭
         if config.enable_eyes:
             try:
                 eyes_open, eye_score = check_eyes_open(landmarks, img_face.shape, config.ear_threshold)

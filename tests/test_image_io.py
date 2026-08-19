@@ -1,4 +1,4 @@
-"""utils/image_io 测试 — JPEG 降采样解码与缩略图尺寸约束 (v5.3)。"""
+"""utils/image_io 测试 — JPEG 降采样解码与缩略图尺寸约束 (v5.3.1)。"""
 
 import cv2
 import numpy as np
