@@ -28,8 +28,9 @@ class WelcomeDialog(QDialog):
         layout.setSpacing(16)
         layout.setContentsMargins(32, 24, 32, 24)
 
-        # 标题
+        # 标题（v5.3: 颜色走主题 QSS，深色模式不白）
         title = QLabel("欢迎使用照片自动筛选工具")
+        title.setObjectName("welcomeTitle")
         title.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(18)
@@ -39,8 +40,9 @@ class WelcomeDialog(QDialog):
 
         # 版本
         version = QLabel("v5.3")
+        version.setObjectName("welcomeVersion")
         version.setAlignment(Qt.AlignCenter)
-        version.setStyleSheet("color: palette(placeholder-text); font-size: 12px;")
+        version.setStyleSheet("font-size: 12px;")
         layout.addWidget(version)
 
         layout.addSpacing(8)
@@ -56,15 +58,8 @@ class WelcomeDialog(QDialog):
         card_row.setSpacing(12)
         for emoji, title_text, desc in cards:
             card = QFrame()
-            # v5.2: 用 palette() 随主题自动适配（深色模式下不再发白）
-            card.setStyleSheet("""
-                QFrame {
-                    background: palette(base);
-                    border-radius: 12px;
-                    padding: 12px;
-                    border: 1px solid palette(mid);
-                }
-            """)
+            # v5.3: 颜色全部走主题 QSS（palette(base) 在深色主题下仍是白色，会发白）
+            card.setObjectName("welcomeCard")
             card_layout = QVBoxLayout(card)
             card_layout.setSpacing(4)
             card_layout.setContentsMargins(10, 10, 10, 10)
@@ -75,13 +70,15 @@ class WelcomeDialog(QDialog):
             card_layout.addWidget(emoji_label)
 
             card_title = QLabel(title_text)
+            card_title.setObjectName("welcomeCardTitle")
             card_title.setAlignment(Qt.AlignCenter)
-            card_title.setStyleSheet("font-weight: bold; font-size: 13px; border: none; background: transparent; color: palette(text);")
+            card_title.setStyleSheet("font-weight: bold; font-size: 13px; border: none; background: transparent;")
             card_layout.addWidget(card_title)
 
             card_desc = QLabel(desc)
+            card_desc.setObjectName("welcomeCardDesc")
             card_desc.setAlignment(Qt.AlignCenter)
-            card_desc.setStyleSheet("font-size: 11px; border: none; background: transparent; color: palette(placeholder-text);")
+            card_desc.setStyleSheet("font-size: 11px; border: none; background: transparent;")
             card_layout.addWidget(card_desc)
 
             card_row.addWidget(card)
@@ -91,8 +88,9 @@ class WelcomeDialog(QDialog):
 
         # 提示
         tip = QLabel("💡 拖拽文件夹可快速导入  |  ⚙ 右上角设置调整偏好  |  双击结果查看原图")
+        tip.setObjectName("welcomeTip")
         tip.setAlignment(Qt.AlignCenter)
-        tip.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
+        tip.setStyleSheet("font-size: 11px;")
         layout.addWidget(tip)
 
         layout.addStretch()
@@ -100,7 +98,8 @@ class WelcomeDialog(QDialog):
         # 不再显示 + 按钮
         bottom_row = QHBoxLayout()
         self.skip_check = QCheckBox("下次不再显示")
-        self.skip_check.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
+        self.skip_check.setObjectName("welcomeSkip")
+        self.skip_check.setStyleSheet("font-size: 11px;")
         bottom_row.addWidget(self.skip_check)
         bottom_row.addStretch()
 

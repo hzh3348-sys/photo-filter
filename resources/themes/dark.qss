@@ -510,6 +510,17 @@ QSpinBox, QDoubleSpinBox {
     min-height: 22px;
 }
 
+/* ── 欢迎页（v5.3 主题适配） ─────────────────────────── */
+QLabel#welcomeTitle { color: #f0f2f7; }
+QLabel#welcomeVersion, QLabel#welcomeTip, QCheckBox#welcomeSkip { color: #8b93a5; }
+QFrame#welcomeCard {
+    background-color: #1a1e27;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+QLabel#welcomeCardTitle { color: #e6e9ef; }
+QLabel#welcomeCardDesc { color: #8b93a5; }
+
 /* ── 消息框 ──────────────────────────────────────────── */
 QMessageBox {
     background-color: #12151c;
